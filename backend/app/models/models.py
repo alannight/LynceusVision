@@ -52,6 +52,9 @@ class Investigation(Base):
     entities: Mapped[list[Entity]] = relationship(
         "Entity", back_populates="investigation", cascade="all, delete-orphan"
     )
+    search_queries: Mapped[list[SearchQuery]] = relationship(
+        "SearchQuery", back_populates="investigation", cascade="all, delete-orphan"
+    )
 
 
 # ─── Entity ───────────────────────────────────────────────────────────────────
@@ -140,3 +143,47 @@ class Observation(Base):
 
     entity: Mapped[Entity] = relationship("Entity", back_populates="observations")
     source: Mapped[Source] = relationship("Source", back_populates="observations")
+
+
+# ─── Search Query (Dorking Studio) ────────────────────────────────────────────
+
+
+class SearchQuery(Base):
+    """
+    Search queries constructed or executed via Dorking Studio.
+    Persists structured filters, finalized query string, target provider,
+    and investigation association.
+    """
+
+    __tablename__ = "search_queries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    investigation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="google", server_default="google"
+    )
+    category: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="general", server_default="general"
+    )
+    structured_filters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="READY_TO_OPEN",
+        server_default="READY_TO_OPEN",
+    )  # DRAFT | READY_TO_OPEN | OPENED_BY_USER
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, server_default=func.now()
+    )
+
+    investigation: Mapped[Investigation | None] = relationship(
+        "Investigation", back_populates="search_queries"
+    )
+

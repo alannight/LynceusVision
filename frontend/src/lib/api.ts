@@ -5,6 +5,7 @@ import {
   Observation,
   Source,
 } from "../types";
+import { SearchQuery, SearchQueryCreateRequest } from "../types/search";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -92,4 +93,30 @@ export const api = {
         save_to_investigation_id: saveToInvestigationId || null,
       }),
     }),
+
+  // Search Queries (Dorking Studio)
+  getSearchQueries: (investigationId?: string) => {
+    const endpoint = investigationId
+      ? `/api/v1/search-queries?investigation_id=${investigationId}`
+      : "/api/v1/search-queries";
+    return request<SearchQuery[]>(endpoint);
+  },
+  
+  getSearchQuery: (id: string) =>
+    request<SearchQuery>(`/api/v1/search-queries/${id}`),
+  
+  createSearchQuery: (payload: SearchQueryCreateRequest) =>
+    request<SearchQuery>("/api/v1/search-queries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  
+  updateSearchQuery: (id: string, payload: Partial<SearchQueryCreateRequest>) =>
+    request<SearchQuery>(`/api/v1/search-queries/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  
+  deleteSearchQuery: (id: string) =>
+    request<void>(`/api/v1/search-queries/${id}`, { method: "DELETE" }),
 };

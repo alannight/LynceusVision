@@ -21,6 +21,7 @@ Named after Lynceus, the Argonaut legendary for superhuman sight.
 | Certificate Transparency connector | ✅ Implemented |
 | Wayback Machine connector | ✅ Implemented |
 | Investigation workflow | ✅ End-to-end |
+| **Dorking Studio** | ✅ **Implemented** |
 | Shodan connector | 🔵 Planned |
 | VirusTotal connector | 🔵 Planned |
 | Hunter.io connector | 🔵 Planned |
@@ -83,7 +84,7 @@ pip install -r requirements.txt
 cp ../.env.example .env
 # Edit .env — set DATABASE_URL
 
-# Run migrations
+# Run migrations (including Dorking Studio tables)
 alembic upgrade head
 
 # Start development server
@@ -136,6 +137,7 @@ LynceusVision/
 ├── AGENTS.md                 # Coding and security rules
 ├── README.md
 ├── docs/
+│   ├── DORKING_STUDIO.md     # Dorking Studio documentation
 │   ├── FOUNDATION_AUDIT.md   # Initial empty-state audit (historical)
 │   ├── ARCHITECTURE.md       # System design and data model
 │   └── ROADMAP.md            # Phased implementation plan
@@ -143,6 +145,7 @@ LynceusVision/
 │   ├── alembic/              # Database migrations
 │   ├── app/
 │   │   ├── api/v1/           # Versioned API routes
+│   │   │   └── search_queries.py  # Dorking Studio endpoints
 │   │   ├── connectors/       # OSINT source connectors
 │   │   ├── models/           # SQLAlchemy models
 │   │   ├── schemas/          # Pydantic request/response schemas
@@ -154,10 +157,54 @@ LynceusVision/
     ├── src/
     │   ├── app/              # Next.js App Router pages
     │   ├── components/       # Shared UI components
-    │   ├── lib/              # API client, utilities
-    │   └── types/            # TypeScript types
+    │   │   └── DorkingStudio.tsx  # Main query builder UI
+    │   ├── lib/
+    │   │   ├── search-query-builder.ts  # Core query construction
+    │   │   └── search-query-builder.test.ts  # Unit tests
+    │   └── types/
+    │       └── search.ts     # TypeScript interfaces
     └── package.json
 ```
+
+---
+
+## Dorking Studio
+
+**Search Engine OSINT Query Builder**
+
+Dorking Studio is now available as a new module in LynceusVision. It provides advanced search engine query construction for OSINT investigations.
+
+### Key Features
+- **Visual Query Builder** - Construct complex search queries with multiple filters
+- **Multiple Search Engines** - Google, Bing, DuckDuckGo, and Brave Search support
+- **Flexible Filtering** - Site restrictions, document types, date ranges, page attributes
+- **Live Preview** - Real-time query generation with syntax validation
+- **Investigation Integration** - Save queries to investigations with full provenance
+
+### Usage
+1. Navigate to **Dorking Studio** from the main sidebar
+2. Enter keywords and select search engine
+3. Apply optional filters (all filters are optional)
+4. Review generated query in live preview
+5. Copy query or open directly in browser
+6. Save to investigation for future reference
+
+### Search Operators Supported
+- `site:` - Restrict to specific domains
+- `filetype:` - Filter by document type
+- `intitle:`, `inurl:`, `intext:` - Page attribute search
+- `after:`, `before:` - Date range filtering
+- `-term` - Term exclusion
+- `"exact phrase"` - Exact phrase matching
+- Parentheses for grouping (Google only)
+
+### Provider Compatibility
+- **Google** - Full operator support with grouping
+- **Bing** - Limited advanced operators
+- **DuckDuckGo** - Simplified privacy-focused syntax
+- **Brave Search** - Privacy-focused with Google-like syntax
+
+See [DORKING_STUDIO.md](docs/DORKING_STUDIO.md) for detailed documentation.
 
 ---
 
@@ -176,3 +223,5 @@ LynceusVision/
 ## Privacy and Legal Use
 
 LynceusVision queries publicly accessible data sources only. Users are responsible for complying with applicable laws, terms of service, and privacy requirements in their jurisdiction. Do not use this tool to collect information on private individuals without appropriate legal authority.
+
+**Dorking Studio Note**: This module only builds search queries. Execution happens in your browser via official search engine websites. No automatic searching, scraping, or result collection is performed by LynceusVision. Users are responsible for complying with search engine terms of service.

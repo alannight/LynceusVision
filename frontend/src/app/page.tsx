@@ -3,13 +3,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Header } from "../components/Header";
 import { SearchSection } from "../components/SearchSection";
+import { DorkingStudio } from "../components/DorkingStudio";
 import { InvestigationsSection } from "../components/InvestigationsSection";
 import { SourcesSection } from "../components/SourcesSection";
 import { Investigation } from "../types";
 import { api } from "../lib/api";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"search" | "investigations" | "sources">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "investigations" | "sources" | "dorking">("search");
   const [systemStatus, setSystemStatus] = useState<"online" | "offline" | "checking">("checking");
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
 
@@ -86,6 +87,13 @@ export default function Home() {
           <SearchSection
             investigations={investigations}
             onRefreshInvestigations={() => void loadData()}
+          />
+        )}
+
+        {activeTab === "dorking" && (
+          <DorkingStudio
+            investigations={investigations}
+            onRefreshInvestigations={async () => { await loadData(); }}
           />
         )}
 

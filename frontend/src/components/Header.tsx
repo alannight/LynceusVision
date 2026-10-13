@@ -3,8 +3,8 @@
 import React from "react";
 
 interface HeaderProps {
-  activeTab: "search" | "investigations" | "sources";
-  setActiveTab: (tab: "search" | "investigations" | "sources") => void;
+  activeTab: "search" | "investigations" | "sources" | "dorking";
+  setActiveTab: (tab: "search" | "investigations" | "sources" | "dorking") => void;
   systemStatus: "online" | "offline" | "checking";
 }
 
@@ -40,6 +40,17 @@ export function Header({ activeTab, setActiveTab, systemStatus }: HeaderProps) {
             }`}
           >
             Global Collect
+          </button>
+          <button
+            id="nav-dorking-btn"
+            onClick={() => setActiveTab("dorking")}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              activeTab === "dorking"
+                ? "bg-zinc-800 text-cyan-400 border border-zinc-700"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+            }`}
+          >
+            Dorking Studio
           </button>
           <button
             id="nav-investigations-btn"
