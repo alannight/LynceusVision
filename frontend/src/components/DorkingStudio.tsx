@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { SearchQueryBuilder, SEARCH_PROVIDERS, PLATFORM_DOMAINS, DOCUMENT_TYPES } from "../lib/search-query-builder";
 import { Investigation } from "../types";
 import { api } from "../lib/api";
@@ -11,7 +11,6 @@ import {
   SearchProvider,
   SearchCategory,
   SearchQueryCreateRequest,
-  SearchQueryStatus,
 } from "../types/search";
 
 interface DorkingStudioProps {
@@ -28,18 +27,14 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   });
 
   // UI state
-  const [queryText, setQueryText] = useState("");
   const [rawQuery, setRawQuery] = useState("");
+  const [hasRawDraft, setHasRawDraft] = useState(false);
   const [isRawMode, setIsRawMode] = useState(false);
   const [selectedInvestigation, setSelectedInvestigation] = useState<string>("");
   const [searchTitle, setSearchTitle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [validation, setValidation] = useState<{ warnings: string[]; errors: string[] }>({
-    warnings: [],
-    errors: [],
-  });
 
   // Site selection state
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -66,45 +61,8 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  // Initialize query builder
-  const [queryBuilder] = useState(() => new SearchQueryBuilder());
-
-  // Update query when filters change
-  useEffect(() => {
-    updateQuery();
-  }, [filters]);
-
-  // Update filters from UI state
-  useEffect(() => {
-    const newFilters: Partial<StructuredFilters> = {
-      ...filters,
-      mainKeywords: filters.mainKeywords || [],
-      sites: getSiteFilters(),
-      documentTypes: getDocumentFilters(),
-      keywordLogic: getKeywordLogic(),
-      pageAttributes: getPageAttributes(),
-      dateFilters: getDateFilters(),
-    };
-
-    setFilters(newFilters);
-  }, [
-    selectedPlatforms,
-    customDomain,
-    excludeSites,
-    selectedDocTypes,
-    customFiletype,
-    keywordOperator,
-    excludeTerms,
-    exactPhrases,
-    intitle,
-    inurl,
-    intext,
-    startDate,
-    endDate,
-  ]);
-
   // Helper functions
-  const getSiteFilters = (): SiteFilter[] => {
+  const getSiteFilters = useCallback((): SiteFilter[] => {
     const sites: SiteFilter[] = [];
 
     // Add selected platforms
@@ -128,9 +86,9 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
     }
 
     return sites;
-  };
+  }, [selectedPlatforms, excludeSites, customDomain]);
 
-  const getDocumentFilters = (): DocumentTypeFilter[] => {
+  const getDocumentFilters = useCallback((): DocumentTypeFilter[] => {
     const docs: DocumentTypeFilter[] = [];
 
     // Add selected document types
@@ -153,9 +111,9 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
     }
 
     return docs;
-  };
+  }, [selectedDocTypes, customFiletype]);
 
-  const getKeywordLogic = () => {
+  const getKeywordLogic = useCallback(() => {
     if (!filters.mainKeywords?.length && !exactPhrases.length && !excludeTerms.length) {
       return undefined;
     }
@@ -166,65 +124,54 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
       exactPhrases,
       termGroups: [],
     };
-  };
+  }, [filters.mainKeywords, exactPhrases, excludeTerms, keywordOperator]);
 
-  const getPageAttributes = () => {
-    const attrs: any = {};
+  const getPageAttributes = useCallback((): StructuredFilters["pageAttributes"] => {
+    const attrs: NonNullable<StructuredFilters["pageAttributes"]> = {};
 
     if (intitle.trim()) attrs.intitle = [intitle.trim()];
     if (inurl.trim()) attrs.inurl = [inurl.trim()];
     if (intext.trim()) attrs.intext = [intext.trim()];
 
     return Object.keys(attrs).length > 0 ? attrs : undefined;
-  };
+  }, [intitle, inurl, intext]);
 
-  const getDateFilters = () => {
+  const getDateFilters = useCallback(() => {
     if (!startDate && !endDate) return undefined;
 
     return {
       startDate,
       endDate,
     };
-  };
+  }, [startDate, endDate]);
 
   // Main query update function
-  const updateQuery = useCallback(() => {
+  const effectiveFilters = useMemo(() => ({
+    ...filters,
+    mainKeywords: filters.mainKeywords || [],
+    sites: getSiteFilters(),
+    documentTypes: getDocumentFilters(),
+    keywordLogic: getKeywordLogic(),
+    pageAttributes: getPageAttributes(),
+    dateFilters: getDateFilters(),
+  } as StructuredFilters), [filters, getSiteFilters, getDocumentFilters, getKeywordLogic,
+    getPageAttributes, getDateFilters]);
+  const queryBuilder = useMemo(
+    () => new SearchQueryBuilder(effectiveFilters, effectiveFilters.searchEngine || "google"),
+    [effectiveFilters],
+  );
+  const builderState = useMemo(() => {
     try {
-      // Update query builder with current filters
-      queryBuilder.setKeywords(filters.mainKeywords || []);
-      queryBuilder.setSites(filters.sites || []);
-      queryBuilder.setDocumentTypes(filters.documentTypes || []);
-      queryBuilder.setKeywordLogic(filters.keywordLogic || { 
-        operator: "AND", 
-        excludeTerms: [], 
-        exactPhrases: [], 
-        termGroups: [] 
-      });
-      queryBuilder.setPageAttributes(filters.pageAttributes || {});
-      queryBuilder.setDateFilters(filters.dateFilters || {});
-      queryBuilder.setProvider(filters.searchEngine || "google");
-
-      // Build and validate query
-      const query = queryBuilder.buildQuery();
-      const validationResult = queryBuilder.validateQuery();
-
-      setQueryText(query);
-      setRawQuery(query);
-      setValidation(validationResult);
-
-      if (!isRawMode) {
-        setRawQuery(query);
-      }
+      return { query: queryBuilder.buildQuery(), validation: queryBuilder.validateQuery() };
     } catch (error) {
-      if (error instanceof Error) {
-        setValidation({
-          warnings: [],
-          errors: [error.message],
-        });
-      }
-      setQueryText("");
+      return {
+        query: "",
+        validation: { valid: false, warnings: [], errors: [error instanceof Error ? error.message : "Invalid query."] },
+      };
     }
-  }, [filters, queryBuilder, isRawMode]);
+  }, [queryBuilder]);
+  const queryText = isRawMode ? rawQuery : builderState.query;
+  const validation = isRawMode ? queryBuilder.validateRawQuery(rawQuery) : builderState.validation;
 
   // Event handlers
   const handleKeywordsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -286,9 +233,6 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
 
   const handleRawQueryChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setRawQuery(e.target.value);
-    if (isRawMode) {
-      setQueryText(e.target.value);
-    }
   };
 
   const handleReset = () => {
@@ -313,9 +257,10 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
     setIntext("");
     setStartDate("");
     setEndDate("");
+    setRawQuery("");
+    setHasRawDraft(false);
     setSearchTitle("");
     setSelectedInvestigation("");
-    setRawQuery("");
     setIsRawMode(false);
     setSaveError(null);
     setSaveSuccess(false);
@@ -327,8 +272,11 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
 
   const handleOpenSearch = () => {
     try {
-      const url = queryBuilder.buildSearchUrl(queryText);
-      window.open(url, "_blank");
+      const url = new URL(queryBuilder.buildSearchUrl(queryText));
+      if (url.protocol !== "https:" || !Object.values(SEARCH_PROVIDERS).some(provider => provider.searchUrl === `${url.origin}${url.pathname}`)) {
+        throw new Error("Search URL is not an approved HTTPS provider URL.");
+      }
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
     } catch (error) {
       console.error("Failed to open search:", error);
     }
@@ -356,7 +304,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
         query_text: queryText,
         provider: filters.searchEngine || "google",
         category: filters.searchType || "general",
-        structured_filters: filters as StructuredFilters,
+        structured_filters: { ...effectiveFilters, queryMode: isRawMode ? "raw" : "builder" },
       };
 
       await api.createSearchQuery(saveRequest);
@@ -374,14 +322,14 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   };
 
   const handleToggleRawMode = () => {
-    setIsRawMode(!isRawMode);
     if (!isRawMode) {
-      // Switching to raw mode - preserve current raw query
-      setRawQuery(queryText);
+      if (!hasRawDraft) {
+        setRawQuery(queryText);
+        setHasRawDraft(true);
+      }
+      setIsRawMode(true);
     } else {
-      // Switching from raw mode - update from raw query
-      setQueryText(rawQuery);
-      // Try to parse the raw query? (future enhancement)
+      setIsRawMode(false);
     }
   };
 
@@ -505,7 +453,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
             <h3 className="text-md font-medium text-zinc-300">A. Site / Domain</h3>
             
             <div className="flex flex-wrap gap-2 mb-4">
-              {Object.entries(PLATFORM_DOMAINS).map(([platform, domain]) => (
+              {Object.keys(PLATFORM_DOMAINS).map(platform => (
                 <button
                   key={platform}
                   onClick={() => handlePlatformToggle(platform)}
@@ -553,7 +501,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
             <h3 className="text-md font-medium text-zinc-300">B. Document Type</h3>
             
             <div className="flex flex-wrap gap-2 mb-4">
-              {Object.entries(DOCUMENT_TYPES).map(([docType, extension]) => (
+              {Object.keys(DOCUMENT_TYPES).map(docType => (
                 <button
                   key={docType}
                   onClick={() => handleDocTypeToggle(docType)}
@@ -685,7 +633,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
                       key={index}
                       className="px-2 py-1 bg-green-900/30 text-green-300 rounded text-sm flex items-center"
                     >
-                      "{phrase}"
+                      <span>{`"${phrase}"`}</span>
                       <button
                         onClick={() => handleRemoveExactPhrase(index)}
                         className="ml-2 text-green-400 hover:text-green-300"
@@ -831,7 +779,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
             {isRawMode ? "Edit Query Directly" : "Generated Query"}
           </label>
           <textarea
-            value={rawQuery}
+            value={queryText}
             onChange={handleRawQueryChange}
             className="w-full px-3 py-3 bg-zinc-800 border border-zinc-700 rounded-md text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
             rows={4}
@@ -853,14 +801,14 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
                 Keywords: {filters.mainKeywords.length}
               </div>
             )}
-            {filters.sites && filters.sites.length > 0 && (
+            {effectiveFilters.sites && effectiveFilters.sites.length > 0 && (
               <div className="px-2 py-1 bg-cyan-900/30 text-cyan-300 rounded text-xs">
-                Sites: {filters.sites.length}
+                Sites: {effectiveFilters.sites.length}
               </div>
             )}
-            {filters.documentTypes && filters.documentTypes.length > 0 && (
+            {effectiveFilters.documentTypes && effectiveFilters.documentTypes.length > 0 && (
               <div className="px-2 py-1 bg-blue-900/30 text-blue-300 rounded text-xs">
-                Document types: {filters.documentTypes.length}
+                Document types: {effectiveFilters.documentTypes.length}
               </div>
             )}
             {excludeTerms.length > 0 && (

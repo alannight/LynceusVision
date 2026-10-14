@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsc --noEmit && eslint"
+    "test": "tsc --noEmit && eslint && node src/lib/search-query-builder.test.mjs"
   },
   "dependencies": {
     "next": "16.4.0",

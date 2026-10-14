@@ -177,9 +177,9 @@ Dorking Studio is now available as a new module in LynceusVision. It provides ad
 ### Key Features
 - **Visual Query Builder** - Construct complex search queries with multiple filters
 - **Multiple Search Engines** - Google, Bing, DuckDuckGo, and Brave Search support
-- **Flexible Filtering** - Site restrictions, document types, date ranges, page attributes
+- **Flexible Filtering** - Optional site restrictions, document types, exclusions, exact phrases, and date ranges
 - **Live Preview** - Real-time query generation with syntax validation
-- **Investigation Integration** - Save queries to investigations with full provenance
+- **Investigation Integration** - Save effective query text and provider metadata to an investigation
 
 ### Usage
 1. Navigate to **Dorking Studio** from the main sidebar
@@ -192,19 +192,19 @@ Dorking Studio is now available as a new module in LynceusVision. It provides ad
 ### Search Operators Supported
 - `site:` - Restrict to specific domains
 - `filetype:` - Filter by document type
-- `intitle:`, `inurl:`, `intext:` - Page attribute search
+- `intitle:`, `inurl:` - Provider-dependent page attributes (compatibility warnings are shown)
 - `after:`, `before:` - Date range filtering
 - `-term` - Term exclusion
 - `"exact phrase"` - Exact phrase matching
-- Parentheses for grouping (Google only)
+- Parentheses for OR grouping where provider syntax is documented; unverified syntax produces a warning
 
 ### Provider Compatibility
-- **Google** - Full operator support with grouping
-- **Bing** - Limited advanced operators
-- **DuckDuckGo** - Simplified privacy-focused syntax
-- **Brave Search** - Privacy-focused with Google-like syntax
+- **Google** - `site:`, `filetype:`, exact phrases, exclusions, and date operators documented; OR grouping is warned as unverified
+- **Bing** - `site:`, `filetype:`, exact phrases, exclusions, OR, and grouping documented; date operators are warned as unverified
+- **DuckDuckGo** - `site:`, `filetype:`, exact phrases, exclusions, `intitle:`, and `inurl:` documented; OR/date syntax is warned as unverified
+- **Brave Search** - `site:`, `filetype:`, exact phrases, exclusions, `OR`, and `intitle:` are documented; date operators are warned as unverified and Brave describes operator behavior as experimental
 
-See [DORKING_STUDIO.md](docs/DORKING_STUDIO.md) for detailed documentation.
+See [DORKING_STUDIO.md](docs/DORKING_STUDIO.md) for detailed documentation. Dorking Studio opens provider search pages in the user's browser; it does not fetch or scrape results.
 
 ---
 

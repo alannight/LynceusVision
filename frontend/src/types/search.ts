@@ -34,6 +34,7 @@ export type SearchQueryStatus =
   | 'OPENED_BY_USER';
 
 export interface StructuredFilters {
+  queryMode?: 'builder' | 'raw';
   // Panel A - Search Context
   searchTitle?: string;
   mainKeywords: string[];
@@ -112,10 +113,7 @@ export interface SearchProviderConfig {
   id: SearchProvider;
   name: string;
   searchUrl: string;
-  supportsGrouping: boolean;
-  supportsParentheses: boolean;
   supportedOperators: SearchOperator[];
-  urlEncodingRules: 'standard' | 'rfc3986' | 'legacy';
   notes?: string;
 }
 
@@ -133,7 +131,10 @@ export type SearchOperator =
   | 'related'
   | 'cache'
   | 'ext'
-  | 'around';
+  | 'around'
+  | 'exact'
+  | 'exclude'
+  | 'or';
 
 export interface SearchQueryCreateRequest {
   investigation_id?: string | null;
