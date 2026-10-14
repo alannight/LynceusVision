@@ -27,6 +27,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   });
 
   // UI state
+  const [keywordsInput, setKeywordsInput] = useState("");
   const [rawQuery, setRawQuery] = useState("");
   const [hasRawDraft, setHasRawDraft] = useState(false);
   const [isRawMode, setIsRawMode] = useState(false);
@@ -175,7 +176,10 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
 
   // Event handlers
   const handleKeywordsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const keywords = e.target.value
+    const value = e.target.value;
+    setKeywordsInput(value);
+
+    const keywords = value
       .split(/[\n,]/)
       .map(k => k.trim())
       .filter(k => k.length > 0);
@@ -242,6 +246,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
       searchEngine: "google",
       searchType: "general",
     });
+    setKeywordsInput("");
     setSelectedPlatforms([]);
     setCustomDomain("");
     setExcludeSites(false);
@@ -333,9 +338,6 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
     }
   };
 
-  // Format keywords for display
-  const keywordsText = filters.mainKeywords?.join(", ") || "";
-
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -371,7 +373,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
                 Main Keywords (one per line or comma separated)
               </label>
               <textarea
-                value={keywordsText}
+                value={keywordsInput}
                 onChange={handleKeywordsChange}
                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-mono text-sm"
                 placeholder="museum nasional&#10;Jakarta&#10;sejarah"

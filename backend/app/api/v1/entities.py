@@ -134,7 +134,7 @@ async def update_entity(
     return _to_entity_response(entity, observation_count=count)
 
 
-@router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_entity(investigation_id: str, entity_id: str, db: DB) -> None:
     entity = await _entity_or_404(entity_id, investigation_id, db)
     await db.delete(entity)

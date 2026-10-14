@@ -51,7 +51,7 @@ class SearchQueryResponse(SearchQueryBase):
 
 
 # CRUD endpoints
-@router.get("/", response_model=List[SearchQueryResponse])
+@router.get("", response_model=List[SearchQueryResponse])
 async def get_search_queries(
     investigation_id: Optional[str] = Query(None, description="Filter by investigation ID"),
     session: AsyncSession = Depends(get_db),
@@ -83,7 +83,7 @@ async def get_search_query(
     return SearchQueryResponse.model_validate(search_query)
 
 
-@router.post("/", response_model=SearchQueryResponse, status_code=201)
+@router.post("", response_model=SearchQueryResponse, status_code=201)
 async def create_search_query(
     data: SearchQueryCreate,
     session: AsyncSession = Depends(get_db),
@@ -166,7 +166,7 @@ async def update_search_query(
     return SearchQueryResponse.model_validate(search_query)
 
 
-@router.delete("/{query_id}", status_code=204)
+@router.delete("/{query_id}", status_code=204, response_model=None)
 async def delete_search_query(
     query_id: str,
     session: AsyncSession = Depends(get_db),
