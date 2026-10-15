@@ -2,49 +2,86 @@
 
 POST /api/v1/collect
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors import get_all_connectors, get_connector
-from app.database import get_db
-from app.models.models import Entity, Investigation, Observation, Source
+from app.database import PersistenceError, get_db
+from app.models.models import Entity, Investigation, Observation, Source, User
 from app.schemas import CollectRequest, CollectResponse, ConnectorResult
+from app.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/collect", tags=["Collect"])
 
 DB = Annotated[AsyncSession, Depends(get_db)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
+FAILED_CONNECTOR_STATUSES = {
+    "TIMEOUT",
+    "RATE_LIMITED",
+    "AUTH_ERROR",
+    "PROVIDER_ERROR",
+    "SSRF_BLOCKED",
+    "VALIDATION_ERROR",
+    "RESPONSE_TOO_LARGE",
+}
 
 
 @router.post("", response_model=CollectResponse)
-async def collect(body: CollectRequest, db: DB) -> CollectResponse:
+async def collect(body: CollectRequest, db: DB, user: CurrentUser) -> CollectResponse:
     """
     Run one or more OSINT connectors against a target.
 
     - If `connectors` is null, all enabled connectors are used.
     - If `save_to_investigation_id` is set, results are persisted as entities + observations.
     """
-    if body.connectors:
-        connectors = [c for cid in body.connectors if (c := get_connector(cid)) is not None]
+    if body.connectors is not None:
+        if not body.connectors:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Select at least one connector, or omit connectors to use all enabled "
+                    "connectors."
+                ),
+            )
+        connectors = [get_connector(connector_id) for connector_id in body.connectors]
+        if any(connector is None for connector in connectors):
+            raise HTTPException(status_code=422, detail="One or more connector IDs are unknown.")
     else:
         connectors = get_all_connectors()
 
+    if body.save_to_investigation_id:
+        investigation = await db.scalar(
+            select(Investigation).where(
+                Investigation.id == body.save_to_investigation_id,
+                Investigation.owner_id == user.id,
+            )
+        )
+        if investigation is None:
+            raise HTTPException(status_code=404, detail="Investigation not found")
+
     # Run all connectors concurrently
-    tasks = [c.collect(body.target) for c in connectors]
+    tasks = [c.collect(body.target) for c in connectors if c is not None]
     results: list[ConnectorResult] = await asyncio.gather(*tasks)
 
     # Optionally persist
     if body.save_to_investigation_id:
         await _persist_results(body.target, body.save_to_investigation_id, results, db)
+        try:
+            await db.commit()
+        except SQLAlchemyError as exc:
+            await db.rollback()
+            raise PersistenceError("Collection results could not be committed") from exc
 
     logger.info(
         "Collect %r: %d connectors, statuses=%s",
@@ -53,7 +90,16 @@ async def collect(body: CollectRequest, db: DB) -> CollectResponse:
         [r.status for r in results],
     )
 
-    return CollectResponse(target=body.target, results=results)
+    return CollectResponse(
+        target=body.target,
+        results=results,
+        collection_status=(
+            "PARTIAL_FAILURE"
+            if any(result.status in FAILED_CONNECTOR_STATUSES for result in results)
+            else "COMPLETE"
+        ),
+        persistence_status="SAVED" if body.save_to_investigation_id else "NOT_REQUESTED",
+    )
 
 
 async def _persist_results(
@@ -62,13 +108,10 @@ async def _persist_results(
     results: list[ConnectorResult],
     db: AsyncSession,
 ) -> None:
-    # Verify investigation exists
-    inv_result = await db.execute(
-        select(Investigation).where(Investigation.id == investigation_id)
-    )
+    # The caller validates ownership before running external connector requests.
+    inv_result = await db.execute(select(Investigation).where(Investigation.id == investigation_id))
     if inv_result.scalar_one_or_none() is None:
-        logger.warning("Investigation %s not found, skipping persistence", investigation_id)
-        return
+        raise HTTPException(status_code=404, detail="Investigation not found")
 
     # Infer entity type from target
     entity_type = _infer_entity_type(target)
@@ -109,7 +152,7 @@ async def _persist_results(
             collected_at=result.collected_at,
             duration_ms=result.duration_ms,
             normalized_data=result.data,
-            raw_response=json.dumps(result.data) if result.data else None,
+            normalized_snapshot=json.dumps(result.data) if result.data else None,
             error_detail=result.error,
         )
         db.add(obs)

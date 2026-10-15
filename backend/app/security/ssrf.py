@@ -3,11 +3,15 @@
 Validates that a hostname/IP is not a private, reserved, loopback,
 link-local, or cloud metadata address before any outbound request is made.
 """
+
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
+import re
 import socket
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -43,19 +47,54 @@ class SSRFBlockedError(Exception):
 
 
 def clean_target_host(target: str) -> str:
-    """Safely extract hostname/domain from user input without destructive character stripping."""
+    """Extract a normalized hostname while rejecting ambiguous URL authority syntax."""
     s = target.strip()
-    for prefix in ("https://", "http://"):
-        if s.lower().startswith(prefix):
-            s = s[len(prefix):]
-    # Remove URL paths, queries, fragments
-    s = s.split("/")[0].split("?")[0].split("#")[0].strip()
-    # Strip port if present (handling IPv6 brackets)
-    if s.startswith("[") and "]" in s:
-        s = s[1 : s.index("]")]
-    elif ":" in s and s.count(":") == 1:
-        s = s.split(":")[0]
-    return s.lower()
+    if not s or any(ord(char) < 32 for char in s) or "@" in s:
+        raise SSRFBlockedError("Target hostname is invalid")
+
+    if "://" in s:
+        parsed = urlsplit(s)
+        if parsed.scheme.lower() not in {"http", "https"} or parsed.username or parsed.password:
+            raise SSRFBlockedError("Target URL scheme or credentials are invalid")
+        try:
+            if parsed.port is not None and not 1 <= parsed.port <= 65535:
+                raise SSRFBlockedError("Target URL port is invalid")
+        except ValueError as exc:
+            raise SSRFBlockedError("Target URL port is invalid") from exc
+        hostname = parsed.hostname or ""
+    else:
+        authority = s.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if authority.startswith("["):
+            close = authority.find("]")
+            if close < 0:
+                raise SSRFBlockedError("Target IPv6 brackets are invalid")
+            hostname = authority[1:close]
+            suffix = authority[close + 1 :]
+            if suffix and not re.fullmatch(r":\d{1,5}", suffix):
+                raise SSRFBlockedError("Target URL port is invalid")
+        elif authority.count(":") == 1:
+            hostname, port = authority.rsplit(":", 1)
+            if not port.isdigit() or not 1 <= int(port) <= 65535:
+                raise SSRFBlockedError("Target URL port is invalid")
+        else:
+            hostname = authority
+
+    try:
+        hostname = hostname.encode("idna").decode("ascii").lower().rstrip(".")
+    except UnicodeError as exc:
+        raise SSRFBlockedError("Target hostname is invalid") from exc
+    if not hostname:
+        raise SSRFBlockedError("Target hostname is invalid")
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        labels = hostname.split(".")
+        if len(hostname) > 253 or any(
+            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+            for label in labels
+        ):
+            raise SSRFBlockedError("Target hostname is invalid") from None
+    return hostname
 
 
 def _is_ip_blocked(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -67,7 +106,9 @@ def _is_ip_blocked(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> boo
     for net in _BLOCKED_NETWORKS:
         if ip_obj.version == net.version and ip_obj in net:
             return True
-    return False
+    # ipaddress classifies non-global special-use, documentation, CGNAT,
+    # benchmarking, and reserved blocks as non-global as well.
+    return not ip_obj.is_global
 
 
 def validate_target(target: str) -> str:
@@ -96,9 +137,7 @@ def validate_target(target: str) -> str:
     if is_literal_ip:
         if _is_ip_blocked(literal_ip):
             logger.warning("SSRF blocked: literal IP %s is private or reserved", hostname)
-            raise SSRFBlockedError(
-                f"Target {hostname!r} is a private or reserved address"
-            )
+            raise SSRFBlockedError(f"Target {hostname!r} is a private or reserved address")
         return hostname
 
     # Resolve domain to IP addresses
@@ -112,7 +151,7 @@ def validate_target(target: str) -> str:
         try:
             parsed = ipaddress.ip_address(ip_str)
         except ValueError:
-            raise SSRFBlockedError(f"Target resolved to unparseable IP: {ip_str}")
+            raise SSRFBlockedError(f"Target resolved to unparseable IP: {ip_str}") from None
 
         if _is_ip_blocked(parsed):
             logger.warning("SSRF blocked: %s resolved to private address %s", hostname, ip_str)
@@ -120,4 +159,36 @@ def validate_target(target: str) -> str:
                 f"Target {hostname!r} resolves to a private or reserved address ({ip_str})"
             )
 
+    return hostname
+
+
+async def validate_target_async(target: str) -> str:
+    """Resolve and validate without blocking the event loop's DNS path."""
+    hostname = clean_target_host(target)
+    if not hostname:
+        raise SSRFBlockedError("Empty or invalid target")
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if _is_ip_blocked(literal):
+            raise SSRFBlockedError(f"Target {hostname!r} is a private or reserved address")
+        return hostname
+    try:
+        answers = await asyncio.wait_for(
+            asyncio.get_running_loop().getaddrinfo(hostname, None, type=socket.SOCK_STREAM),
+            timeout=5,
+        )
+    except (socket.gaierror, TimeoutError) as exc:
+        raise SSRFBlockedError(f"Cannot resolve {hostname!r}") from exc
+    if not answers:
+        raise SSRFBlockedError(f"Cannot resolve {hostname!r}")
+    for answer in answers:
+        try:
+            address = ipaddress.ip_address(answer[4][0])
+        except ValueError as exc:
+            raise SSRFBlockedError("Target resolved to an invalid IP address") from exc
+        if _is_ip_blocked(address):
+            raise SSRFBlockedError(f"Target {hostname!r} resolves to a private or reserved address")
     return hostname

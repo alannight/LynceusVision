@@ -59,3 +59,28 @@ async def test_search_query_rejects_empty_query_text(client: httpx.AsyncClient) 
         "/api/v1/search-queries", json={"title": "Empty", "query_text": ""}
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_query_read_update_delete_crud(client: httpx.AsyncClient) -> None:
+    created = await client.post(
+        "/api/v1/search-queries",
+        json={"title": "initial", "query_text": "cybersecurity", "provider": "google"},
+    )
+    assert created.status_code == 201
+    query_id = created.json()["id"]
+
+    fetched = await client.get(f"/api/v1/search-queries/{query_id}")
+    assert fetched.status_code == 200
+    assert fetched.json()["query_text"] == "cybersecurity"
+
+    updated = await client.patch(
+        f"/api/v1/search-queries/{query_id}",
+        json={"query_text": '"incident response"', "status": "READY_TO_OPEN"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["query_text"] == '"incident response"'
+
+    deleted = await client.delete(f"/api/v1/search-queries/{query_id}")
+    assert deleted.status_code == 204
+    assert (await client.get(f"/api/v1/search-queries/{query_id}")).status_code == 404

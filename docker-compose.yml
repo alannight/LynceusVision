@@ -5,11 +5,9 @@ services:
     environment:
       POSTGRES_DB: lynceusvision
       POSTGRES_USER: lynceus
-      POSTGRES_PASSWORD: lynceus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lynceus -d lynceusvision"]
       interval: 10s
@@ -21,28 +19,28 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://lynceus:lynceus@db:5432/lynceusvision
+      APP_ENV: production
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?Set a private APP_SECRET_KEY of at least 32 characters}
+      DATABASE_URL: postgresql+asyncpg://lynceus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/lynceusvision
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CONNECTOR_RESPONSE_MAX_BYTES: ${CONNECTOR_RESPONSE_MAX_BYTES:-5242880}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     restart: unless-stopped
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
 

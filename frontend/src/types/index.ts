@@ -52,7 +52,8 @@ export interface ConnectorResult {
     | "AUTH_ERROR"
     | "PROVIDER_ERROR"
     | "SSRF_BLOCKED"
-    | "VALIDATION_ERROR";
+    | "VALIDATION_ERROR"
+    | "RESPONSE_TOO_LARGE";
   query: string;
   collected_at: string;
   duration_ms: number;
@@ -63,4 +64,6 @@ export interface ConnectorResult {
 export interface CollectResponse {
   target: string;
   results: ConnectorResult[];
+  collection_status: "COMPLETE" | "PARTIAL_FAILURE";
+  persistence_status: "SAVED" | "NOT_REQUESTED";
 }

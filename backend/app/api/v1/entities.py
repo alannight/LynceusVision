@@ -1,4 +1,5 @@
 """Entities CRUD router — /api/v1/investigations/{id}/entities"""
+
 from __future__ import annotations
 
 import logging
@@ -9,13 +10,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.models import Entity, Investigation, Observation
+from app.models.models import Entity, Investigation, Observation, User
 from app.schemas import EntityCreate, EntityResponse, EntityUpdate, ObservationResponse
+from app.security.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/investigations/{investigation_id}/entities", tags=["Entities"])
 
 DB = Annotated[AsyncSession, Depends(get_db)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def _to_entity_response(entity: Entity, observation_count: int = 0) -> EntityResponse:
@@ -46,9 +49,11 @@ def _to_obs_response(obs: Observation) -> ObservationResponse:
     )
 
 
-async def _inv_or_404(investigation_id: str, db: AsyncSession) -> Investigation:
+async def _inv_or_404(investigation_id: str, db: AsyncSession, owner_id: str) -> Investigation:
     result = await db.execute(
-        select(Investigation).where(Investigation.id == investigation_id)
+        select(Investigation).where(
+            Investigation.id == investigation_id, Investigation.owner_id == owner_id
+        )
     )
     inv = result.scalar_one_or_none()
     if inv is None:
@@ -56,11 +61,14 @@ async def _inv_or_404(investigation_id: str, db: AsyncSession) -> Investigation:
     return inv
 
 
-async def _entity_or_404(entity_id: str, investigation_id: str, db: AsyncSession) -> Entity:
+async def _entity_or_404(
+    entity_id: str, investigation_id: str, db: AsyncSession, owner_id: str
+) -> Entity:
     result = await db.execute(
-        select(Entity).where(
-            Entity.id == entity_id, Entity.investigation_id == investigation_id
-        )
+        select(Entity)
+        .where(Entity.id == entity_id, Entity.investigation_id == investigation_id)
+        .join(Investigation, Investigation.id == Entity.investigation_id)
+        .where(Investigation.owner_id == owner_id)
     )
     entity = result.scalar_one_or_none()
     if entity is None:
@@ -70,9 +78,9 @@ async def _entity_or_404(entity_id: str, investigation_id: str, db: AsyncSession
 
 @router.post("", response_model=EntityResponse, status_code=status.HTTP_201_CREATED)
 async def create_entity(
-    investigation_id: str, body: EntityCreate, db: DB
+    investigation_id: str, body: EntityCreate, db: DB, user: CurrentUser
 ) -> EntityResponse:
-    await _inv_or_404(investigation_id, db)
+    await _inv_or_404(investigation_id, db, user.id)
     entity = Entity(
         investigation_id=investigation_id,
         entity_type=body.entity_type,
@@ -88,8 +96,8 @@ async def create_entity(
 
 
 @router.get("", response_model=list[EntityResponse])
-async def list_entities(investigation_id: str, db: DB) -> list[EntityResponse]:
-    await _inv_or_404(investigation_id, db)
+async def list_entities(investigation_id: str, db: DB, user: CurrentUser) -> list[EntityResponse]:
+    await _inv_or_404(investigation_id, db, user.id)
     result = await db.execute(
         select(Entity)
         .where(Entity.investigation_id == investigation_id)
@@ -107,44 +115,42 @@ async def list_entities(investigation_id: str, db: DB) -> list[EntityResponse]:
 
 
 @router.get("/{entity_id}", response_model=EntityResponse)
-async def get_entity(investigation_id: str, entity_id: str, db: DB) -> EntityResponse:
-    entity = await _entity_or_404(entity_id, investigation_id, db)
-    count_result = await db.execute(
-        select(func.count()).where(Observation.entity_id == entity.id)
-    )
+async def get_entity(
+    investigation_id: str, entity_id: str, db: DB, user: CurrentUser
+) -> EntityResponse:
+    entity = await _entity_or_404(entity_id, investigation_id, db, user.id)
+    count_result = await db.execute(select(func.count()).where(Observation.entity_id == entity.id))
     count = count_result.scalar() or 0
     return _to_entity_response(entity, observation_count=count)
 
 
 @router.patch("/{entity_id}", response_model=EntityResponse)
 async def update_entity(
-    investigation_id: str, entity_id: str, body: EntityUpdate, db: DB
+    investigation_id: str, entity_id: str, body: EntityUpdate, db: DB, user: CurrentUser
 ) -> EntityResponse:
-    entity = await _entity_or_404(entity_id, investigation_id, db)
+    entity = await _entity_or_404(entity_id, investigation_id, db, user.id)
     if body.label is not None:
         entity.label = body.label
     if body.notes is not None:
         entity.notes = body.notes
     await db.flush()
     await db.refresh(entity)
-    count_result = await db.execute(
-        select(func.count()).where(Observation.entity_id == entity.id)
-    )
+    count_result = await db.execute(select(func.count()).where(Observation.entity_id == entity.id))
     count = count_result.scalar() or 0
     return _to_entity_response(entity, observation_count=count)
 
 
 @router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
-async def delete_entity(investigation_id: str, entity_id: str, db: DB) -> None:
-    entity = await _entity_or_404(entity_id, investigation_id, db)
+async def delete_entity(investigation_id: str, entity_id: str, db: DB, user: CurrentUser) -> None:
+    entity = await _entity_or_404(entity_id, investigation_id, db, user.id)
     await db.delete(entity)
 
 
 @router.get("/{entity_id}/observations", response_model=list[ObservationResponse])
 async def list_observations(
-    investigation_id: str, entity_id: str, db: DB
+    investigation_id: str, entity_id: str, db: DB, user: CurrentUser
 ) -> list[ObservationResponse]:
-    await _entity_or_404(entity_id, investigation_id, db)
+    await _entity_or_404(entity_id, investigation_id, db, user.id)
     result = await db.execute(
         select(Observation)
         .where(Observation.entity_id == entity_id)

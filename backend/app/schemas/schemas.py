@@ -1,4 +1,5 @@
 """Pydantic schemas for LynceusVision API."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -116,9 +117,11 @@ class ObservationResponse(BaseModel):
 
 
 class CollectRequest(BaseModel):
-    target: str = Field(..., min_length=1, max_length=2048, description="Domain, IP, or URL to investigate")
+    target: str = Field(
+        ..., min_length=1, max_length=2048, description="Domain, IP, or URL to investigate"
+    )
     connectors: list[str] | None = Field(
-        None, description="Connector IDs to use. Null means all enabled connectors."
+        None, description="Omit or use null for all enabled connectors; an empty list is invalid."
     )
     save_to_investigation_id: str | None = Field(
         None, description="If provided, results are saved as entities and observations."
@@ -127,7 +130,17 @@ class CollectRequest(BaseModel):
 
 class ConnectorResult(BaseModel):
     connector_id: str
-    status: Literal["OK", "EMPTY", "TIMEOUT", "RATE_LIMITED", "AUTH_ERROR", "PROVIDER_ERROR", "SSRF_BLOCKED", "VALIDATION_ERROR"]
+    status: Literal[
+        "OK",
+        "EMPTY",
+        "TIMEOUT",
+        "RATE_LIMITED",
+        "AUTH_ERROR",
+        "PROVIDER_ERROR",
+        "SSRF_BLOCKED",
+        "VALIDATION_ERROR",
+        "RESPONSE_TOO_LARGE",
+    ]
     query: str
     collected_at: datetime
     duration_ms: int
@@ -138,3 +151,5 @@ class ConnectorResult(BaseModel):
 class CollectResponse(BaseModel):
     target: str
     results: list[ConnectorResult]
+    collection_status: Literal["COMPLETE", "PARTIAL_FAILURE"]
+    persistence_status: Literal["SAVED", "NOT_REQUESTED"]

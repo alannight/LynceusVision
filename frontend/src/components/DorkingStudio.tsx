@@ -47,7 +47,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   const [customFiletype, setCustomFiletype] = useState("");
 
   // Keyword logic
-  const [keywordOperator, setKeywordOperator] = useState<"AND" | "OR">("AND");
+  const [alternativeKeywordsInput, setAlternativeKeywordsInput] = useState("");
   const [excludeTerms, setExcludeTerms] = useState<string[]>([]);
   const [excludeTermInput, setExcludeTermInput] = useState("");
   const [exactPhrases, setExactPhrases] = useState<string[]>([]);
@@ -115,17 +115,23 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   }, [selectedDocTypes, customFiletype]);
 
   const getKeywordLogic = useCallback(() => {
-    if (!filters.mainKeywords?.length && !exactPhrases.length && !excludeTerms.length) {
+    const alternativeKeywords = alternativeKeywordsInput
+      .split(/[\n,]/)
+      .map(keyword => keyword.trim())
+      .filter(Boolean);
+    if (!filters.mainKeywords?.length && !exactPhrases.length && !excludeTerms.length && !alternativeKeywords.length) {
       return undefined;
     }
 
     return {
-      operator: keywordOperator,
+      operator: "AND" as const,
       excludeTerms,
       exactPhrases,
-      termGroups: [],
+      termGroups: alternativeKeywords.length
+        ? [{ terms: alternativeKeywords, operator: "OR" as const }]
+        : [],
     };
-  }, [filters.mainKeywords, exactPhrases, excludeTerms, keywordOperator]);
+  }, [filters.mainKeywords, exactPhrases, excludeTerms, alternativeKeywordsInput]);
 
   const getPageAttributes = useCallback((): StructuredFilters["pageAttributes"] => {
     const attrs: NonNullable<StructuredFilters["pageAttributes"]> = {};
@@ -252,7 +258,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
     setExcludeSites(false);
     setSelectedDocTypes([]);
     setCustomFiletype("");
-    setKeywordOperator("AND");
+    setAlternativeKeywordsInput("");
     setExcludeTerms([]);
     setExcludeTermInput("");
     setExactPhrases([]);
@@ -535,34 +541,20 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
           {/* Keyword logic section */}
           <div className="space-y-4">
             <h3 className="text-md font-medium text-zinc-300">C. Keyword Logic</h3>
-            
-            <div className="flex items-center space-x-4">
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Operator between keywords
-                </label>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setKeywordOperator("AND")}
-                    className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                      keywordOperator === "AND"
-                        ? "bg-cyan-900 text-cyan-300 border border-cyan-800"
-                        : "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700"
-                    }`}
-                  >
-                    AND (all must match)
-                  </button>
-                  <button
-                    onClick={() => setKeywordOperator("OR")}
-                    className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                      keywordOperator === "OR"
-                        ? "bg-cyan-900 text-cyan-300 border border-cyan-800"
-                        : "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700"
-                    }`}
-                  >
-                    OR (any can match)
-                  </button>
-                </div>
+
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Alternative Keywords (OR)
+              </label>
+              <textarea
+                value={alternativeKeywordsInput}
+                onChange={(e) => setAlternativeKeywordsInput(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent font-mono text-sm"
+                placeholder={'cybersecurity\nkeamanan siber'}
+                rows={2}
+              />
+              <div className="mt-1 text-xs text-zinc-500">
+                Any term here may match; main keywords and selected filters still apply.
               </div>
             </div>
 
@@ -835,7 +827,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
         <div className="flex flex-wrap gap-3">
           <button
             onClick={handleCopyQuery}
-            disabled={!queryText.trim()}
+            disabled={!queryText.trim() || validation.errors.length > 0}
             className={`px-4 py-2 rounded-md font-medium transition-colors ${
               queryText.trim()
                 ? "bg-cyan-600 hover:bg-cyan-700 text-white"
@@ -861,7 +853,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
 
           <button
             onClick={handleSaveToInvestigation}
-            disabled={isSaving || !queryText.trim() || !searchTitle.trim()}
+            disabled={isSaving || !queryText.trim() || !searchTitle.trim() || validation.errors.length > 0}
             className={`px-4 py-2 rounded-md font-medium transition-colors ${
               !isSaving && queryText.trim() && searchTitle.trim()
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white"

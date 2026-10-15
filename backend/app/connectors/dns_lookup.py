@@ -12,7 +12,7 @@ import dns.resolver
 
 from app.connectors.base import BaseConnector
 from app.schemas import ConnectorResult
-from app.security import SSRFBlockedError, clean_target_host, validate_target
+from app.security import SSRFBlockedError, clean_target_host, validate_target_async
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class DNSConnector(BaseConnector):
 
         # Target and SSRF validation
         try:
-            validate_target(domain)
+            await validate_target_async(domain)
         except SSRFBlockedError as exc:
             return self._result(query, "SSRF_BLOCKED", None, self._elapsed_ms(start), str(exc))
 

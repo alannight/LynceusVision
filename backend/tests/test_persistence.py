@@ -1,9 +1,10 @@
 """Persistence verification test across isolated database sessions."""
+
 from __future__ import annotations
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import Base
 from app.models.models import Entity, Investigation, Observation, Source
@@ -40,7 +41,7 @@ async def test_end_to_end_persistence_lifecycle() -> None:
             status="OK",
             duration_ms=32,
             normalized_data={"records": {"A": ["1.2.3.4"]}},
-            raw_response='{"records": {"A": ["1.2.3.4"]}}',
+            normalized_snapshot='{"records": {"A": ["1.2.3.4"]}}',
         )
         session1.add(obs)
         await session1.commit()
@@ -57,7 +58,9 @@ async def test_end_to_end_persistence_lifecycle() -> None:
         assert len(entities) == 1
         assert entities[0].value == "persist-target.org"
 
-        obs_res = await session2.execute(select(Observation).where(Observation.entity_id == entity_id))
+        obs_res = await session2.execute(
+            select(Observation).where(Observation.entity_id == entity_id)
+        )
         observations = obs_res.scalars().all()
         assert len(observations) == 1
         read_obs = observations[0]
@@ -79,7 +82,9 @@ async def test_end_to_end_persistence_lifecycle() -> None:
         ent_check = await session4.execute(select(Entity).where(Entity.id == entity_id))
         assert ent_check.scalar_one_or_none() is None
 
-        obs_check = await session4.execute(select(Observation).where(Observation.entity_id == entity_id))
+        obs_check = await session4.execute(
+            select(Observation).where(Observation.entity_id == entity_id)
+        )
         assert obs_check.scalar_one_or_none() is None
 
     await engine.dispose()

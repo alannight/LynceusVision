@@ -1,4 +1,5 @@
 """LynceusVision backend application settings."""
+
 from __future__ import annotations
 
 import logging
@@ -18,10 +19,10 @@ class Settings(BaseSettings):
 
     # Application
     app_env: Literal["development", "testing", "production"] = "development"
-    app_secret_key: str = "INSECURE_DEFAULT_CHANGE_ME"
+    app_secret_key: str | None = None
     log_level: str = "INFO"
 
-    # Database: Must be explicitly configured; no silent default fallback allowed (AGENTS.md Rule 4.2)
+    # Database must be explicit; there is no silent fallback.
     database_url: str | None = None
 
     # CORS
@@ -47,10 +48,25 @@ class Settings(BaseSettings):
             "sqlite+aiosqlite://",
         )
         if not any(v.startswith(p) for p in allowed_prefixes):
-            raise ValueError(
-                f"DATABASE_URL must use postgresql+asyncpg:// or sqlite+aiosqlite://, got: {v!r}"
-            )
+            raise ValueError("DATABASE_URL must use postgresql+asyncpg:// or sqlite+aiosqlite://.")
         return v
+
+    @field_validator("app_secret_key")
+    @classmethod
+    def validate_secret(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return value
+        if value in {"INSECURE_DEFAULT_CHANGE_ME", "CHANGE_ME_use_openssl_rand_-hex_32"}:
+            raise ValueError("APP_SECRET_KEY must be replaced with a private random secret.")
+        if len(value) < 32:
+            raise ValueError("APP_SECRET_KEY must contain at least 32 characters.")
+        return value
+
+    def model_post_init(self, __context: object) -> None:
+        if self.app_env == "production" and not self.app_secret_key:
+            raise ValueError("APP_SECRET_KEY is required in production.")
+        if self.connector_response_max_bytes < 1:
+            raise ValueError("CONNECTOR_RESPONSE_MAX_BYTES must be positive.")
 
     def configure_logging(self) -> None:
         logging.basicConfig(

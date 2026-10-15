@@ -10,10 +10,11 @@ All filters are optional. Empty values are omitted. A query must contain at leas
 - Exact phrases are enclosed in double quotes.
 - One site or file type uses `site:domain.example` or `filetype:pdf`.
 - Multiple included sites and file types are grouped with uppercase `OR`; exclusion terms use a leading minus.
+- Keyword alternatives are a separate OR group from the main keyword. Selecting several sites does not expand or duplicate the keyword into each OR branch.
 - Dates use strict `YYYY-MM-DD` values. `after:` and `before:` are emitted only for selected dates, and reversed ranges are rejected.
 - Domains must be hostnames; schemes, paths, credentials, and malformed labels are rejected.
 - Raw mode keeps the user's text as the effective query. Provider changes only change the destination URL and compatibility warning. Raw syntax is checked for empty input, unbalanced quotes/parentheses, incomplete OR, and valueless common operators; it is not parsed or rewritten.
-- Copy, Open, and Save all use the effective preview string. Search URLs are built with `URL.searchParams` so the query is encoded once. Open is restricted to the four configured HTTPS providers.
+- Copy, Open, and Save all use the same effective preview string. Search URLs are built with the provider's configured query parameter and `URL.searchParams` so the query is encoded once. Open is restricted to the four configured HTTPS providers.
 
 ## Provider operator compatibility
 
@@ -30,7 +31,7 @@ Provider references (official help): [Google Search operators](https://support.g
 
 ## Query persistence
 
-`POST /api/v1/search-queries` validates required title and query text and verifies an optional investigation exists. Its response is the evidence that the query was saved. The query timestamp comes from the backend. This endpoint persists query intent only; it does not indicate that a provider search was run or that results were found.
+The API endpoints require a bearer token. `POST /api/v1/search-queries` validates required title and query text, assigns the current owner, and verifies an optional investigation belongs to that owner. Read/update/delete operations are also owner-scoped. Its successful response is evidence that the query was saved. This endpoint persists query intent only; it does not indicate that a provider search was run or that results were found.
 
 ## Verification
 

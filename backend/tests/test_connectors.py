@@ -1,4 +1,5 @@
 """Unit tests for OSINT connectors using synthetic HTTP responses."""
+
 from __future__ import annotations
 
 import httpx
@@ -16,11 +17,21 @@ SYNTHETIC_RDAP_PAYLOAD = {
     "entities": [
         {
             "roles": ["registrar"],
-            "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Synthetic Registrar LLC"]]],
+            "vcardArray": [
+                "vcard",
+                [["version", {}, "text", "4.0"], ["fn", {}, "text", "Synthetic Registrar LLC"]],
+            ],
         },
         {
             "roles": ["registrant"],
-            "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Jane Doe"], ["adr", {}, "text", ["", "", "", "", "", "", "US"]]]],
+            "vcardArray": [
+                "vcard",
+                [
+                    ["version", {}, "text", "4.0"],
+                    ["fn", {}, "text", "Jane Doe"],
+                    ["adr", {}, "text", ["", "", "", "", "", "", "US"]],
+                ],
+            ],
         },
     ],
     "nameservers": [{"ldhName": "ns1.synthetic.org"}, {"ldhName": "ns2.synthetic.org"}],
@@ -77,28 +88,28 @@ async def test_rdap_success_direct() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rdap_success_with_redirect() -> None:
+async def test_rdap_redirect_is_not_followed() -> None:
     connector = RDAPConnector()
     with respx.mock(assert_all_called=False) as respx_mock:
         respx_mock.get("https://rdap.org/domain/example.com").mock(
-            return_value=httpx.Response(302, headers={"Location": "https://rdap.verisign.com/domain/example.com"})
+            return_value=httpx.Response(
+                302, headers={"Location": "https://rdap.verisign.com/domain/example.com"}
+            )
         )
         respx_mock.get("https://rdap.verisign.com/domain/example.com").mock(
             return_value=httpx.Response(200, json=SYNTHETIC_RDAP_PAYLOAD)
         )
         res = await connector.collect("example.com")
-        assert res.status == "OK"
-        assert res.data is not None
-        assert res.data["registrar"] == "Synthetic Registrar LLC"
+        assert res.status == "PROVIDER_ERROR"
+        assert res.data is None
+        assert len(respx_mock.calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_rdap_not_found_returns_empty() -> None:
     connector = RDAPConnector()
     with respx.mock(assert_all_called=False) as respx_mock:
-        respx_mock.get("https://rdap.org/domain/example.com").mock(
-            return_value=httpx.Response(404)
-        )
+        respx_mock.get("https://rdap.org/domain/example.com").mock(return_value=httpx.Response(404))
         res = await connector.collect("example.com")
         assert res.status == "EMPTY"
 
@@ -124,7 +135,11 @@ async def test_crtsh_success() -> None:
         assert res.status == "OK"
         assert res.data is not None
         assert res.data["total_certificates_found"] == 2
-        assert "www.synthetic-test.org" in res.data["unique_subdomains"] or "dev.synthetic-test.org" in res.data["unique_subdomains"] or res.status == "OK"
+        assert (
+            "www.synthetic-test.org" in res.data["unique_subdomains"]
+            or "dev.synthetic-test.org" in res.data["unique_subdomains"]
+            or res.status == "OK"
+        )
 
 
 @pytest.mark.asyncio

@@ -3,15 +3,21 @@
 API documentation: https://crt.sh/ (JSON API)
 Terms: Public CT log data, free for research use.
 """
+
 from __future__ import annotations
 
 import logging
 
 import httpx
 
-from app.connectors.base import BaseConnector, _make_client
+from app.connectors.base import (
+    BaseConnector,
+    ConnectorResponseTooLargeError,
+    _make_client,
+    get_limited_response,
+)
 from app.schemas import ConnectorResult
-from app.security import SSRFBlockedError, clean_target_host, validate_target
+from app.security import SSRFBlockedError, clean_target_host, validate_target_async
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +41,27 @@ class CertSHConnector(BaseConnector):
 
         # SSRF / target validation
         try:
-            validate_target(domain)
+            await validate_target_async(domain)
         except SSRFBlockedError as exc:
             return self._result(query, "SSRF_BLOCKED", None, self._elapsed_ms(start), str(exc))
 
         url = CRTSH_URL.format(domain=domain)
         try:
             async with _make_client() as client:
-                response = await client.get(url)
+                response = await get_limited_response(client, url)
+        except ConnectorResponseTooLargeError as exc:
+            return self._result(
+                query, "RESPONSE_TOO_LARGE", None, self._elapsed_ms(start), str(exc)
+            )
+        except TimeoutError:
+            return self._result(
+                query, "TIMEOUT", None, self._elapsed_ms(start), "Total request time exceeded"
+            )
         except httpx.TimeoutException:
             logger.warning("crt.sh timeout for %s", domain)
-            return self._result(query, "TIMEOUT", None, self._elapsed_ms(start), "Request timed out")
+            return self._result(
+                query, "TIMEOUT", None, self._elapsed_ms(start), "Request timed out"
+            )
         except httpx.RequestError as exc:
             return self._result(query, "PROVIDER_ERROR", None, self._elapsed_ms(start), str(exc))
 
@@ -54,7 +70,9 @@ class CertSHConnector(BaseConnector):
         if response.status_code == 429:
             return self._result(query, "RATE_LIMITED", None, elapsed, "Rate limited by crt.sh")
         if response.status_code != 200:
-            return self._result(query, "PROVIDER_ERROR", None, elapsed, f"HTTP {response.status_code}")
+            return self._result(
+                query, "PROVIDER_ERROR", None, elapsed, f"HTTP {response.status_code}"
+            )
 
         # Distinguish truly empty body vs invalid JSON
         text = response.text.strip()
@@ -83,19 +101,21 @@ class CertSHConnector(BaseConnector):
             key = f"{cert.get('common_name', '')}|{cert.get('name_value', '')}"
             if key not in seen:
                 seen.add(key)
-                certs.append({
-                    "id": cert.get("id"),
-                    "logged_at": cert.get("entry_timestamp"),
-                    "not_before": cert.get("not_before"),
-                    "not_after": cert.get("not_after"),
-                    "common_name": cert.get("common_name"),
-                    "san": [
-                        n.strip()
-                        for n in (cert.get("name_value") or "").split("\n")
-                        if n.strip()
-                    ],
-                    "issuer": cert.get("issuer_name"),
-                })
+                certs.append(
+                    {
+                        "id": cert.get("id"),
+                        "logged_at": cert.get("entry_timestamp"),
+                        "not_before": cert.get("not_before"),
+                        "not_after": cert.get("not_after"),
+                        "common_name": cert.get("common_name"),
+                        "san": [
+                            n.strip()
+                            for n in (cert.get("name_value") or "").split("\n")
+                            if n.strip()
+                        ],
+                        "issuer": cert.get("issuer_name"),
+                    }
+                )
 
         # Extract unique subdomains from SANs
         subdomains: set[str] = set()

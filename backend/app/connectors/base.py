@@ -1,6 +1,8 @@
 """Base connector interface for LynceusVision."""
+
 from __future__ import annotations
 
+import asyncio
 import time
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
@@ -21,6 +23,37 @@ DEFAULT_TIMEOUT = httpx.Timeout(
     write=5.0,
     pool=5.0,
 )
+
+
+class ConnectorResponseTooLargeError(Exception):
+    """Raised when a provider body exceeds the configured actual byte limit."""
+
+
+async def get_limited_response(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+) -> httpx.Response:
+    """Read a response incrementally, enforcing decompressed byte and total-time limits."""
+    maximum = get_settings().connector_response_max_bytes
+    chunks: list[bytes] = []
+    received = 0
+    async with asyncio.timeout(30):
+        async with client.stream("GET", url, params=params) as response:
+            async for chunk in response.aiter_bytes():
+                received += len(chunk)
+                if received > maximum:
+                    raise ConnectorResponseTooLargeError(
+                        f"Provider response exceeded {maximum} bytes"
+                    )
+                chunks.append(chunk)
+            return httpx.Response(
+                status_code=response.status_code,
+                headers=response.headers,
+                content=b"".join(chunks),
+                request=response.request,
+            )
 
 
 def _make_client(base_url: str = "") -> httpx.AsyncClient:

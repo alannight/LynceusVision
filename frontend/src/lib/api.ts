@@ -13,10 +13,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const url = `${API_BASE}${endpoint}`;
   const headers = {
     "Content-Type": "application/json",
+    ...(typeof window !== "undefined" && sessionStorage.getItem("lv_access_token")
+      ? { Authorization: `Bearer ${sessionStorage.getItem("lv_access_token")}` }
+      : {}),
     ...options.headers,
   };
 
   const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && typeof window !== "undefined" && !endpoint.startsWith("/api/v1/auth/")) {
+    sessionStorage.removeItem("lv_access_token");
+    window.dispatchEvent(new Event("lv-auth-change"));
+  }
   if (!res.ok) {
     let errorDetail = `HTTP ${res.status} ${res.statusText}`;
     try {
@@ -36,6 +43,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const api = {
+  register: (username: string, password: string) =>
+    request<{ access_token: string }>("/api/v1/auth/register", { method: "POST", body: JSON.stringify({ username, password }) }),
+  login: (username: string, password: string) =>
+    request<{ access_token: string }>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   getHealth: () => request<{ status: string; app: string; version: string }>("/api/health"),
 
   // Investigations
@@ -89,7 +100,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({
         target,
-        connectors: connectors && connectors.length > 0 ? connectors : null,
+        connectors: connectors ?? null,
         save_to_investigation_id: saveToInvestigationId || null,
       }),
     }),

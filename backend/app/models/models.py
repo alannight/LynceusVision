@@ -1,4 +1,5 @@
 """SQLAlchemy ORM models for LynceusVision."""
+
 from __future__ import annotations
 
 import uuid
@@ -7,7 +8,6 @@ from datetime import UTC, datetime
 from sqlalchemy import (
     JSON,
     DateTime,
-    Enum,
     ForeignKey,
     String,
     Text,
@@ -27,6 +27,17 @@ def _new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    username: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+
 # ─── Investigation ────────────────────────────────────────────────────────────
 
 
@@ -34,6 +45,9 @@ class Investigation(Base):
     __tablename__ = "investigations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    owner_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
@@ -86,7 +100,9 @@ class Entity(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("investigation_id", "entity_type", "value", name="uq_entity_per_investigation"),
+        UniqueConstraint(
+            "investigation_id", "entity_type", "value", name="uq_entity_per_investigation"
+        ),
     )
 
 
@@ -124,9 +140,7 @@ class Observation(Base):
     entity_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
     )
-    source_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("sources.id"), nullable=False
-    )
+    source_id: Mapped[str] = mapped_column(String(64), ForeignKey("sources.id"), nullable=False)
     query_context: Mapped[str] = mapped_column(
         String(2048), nullable=False
     )  # exact query sent to connector
@@ -138,7 +152,7 @@ class Observation(Base):
     )
     duration_ms: Mapped[int | None] = mapped_column(nullable=True)
     normalized_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalized_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     entity: Mapped[Entity] = relationship("Entity", back_populates="observations")
@@ -158,6 +172,9 @@ class SearchQuery(Base):
     __tablename__ = "search_queries"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    owner_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     investigation_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=True
     )
@@ -186,4 +203,3 @@ class SearchQuery(Base):
     investigation: Mapped[Investigation | None] = relationship(
         "Investigation", back_populates="search_queries"
     )
-

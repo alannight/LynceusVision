@@ -5,10 +5,12 @@ Revises: 001_initial_schema
 Create Date: 2026-10-12 12:00:01.000000
 
 """
+
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision: str = "002_add_search_queries"
 down_revision: str | None = "001_initial_schema"
@@ -33,8 +35,12 @@ def upgrade() -> None:
         sa.Column("category", sa.String(length=64), nullable=False, server_default="general"),
         sa.Column("structured_filters", sa.JSON(), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="READY_TO_OPEN"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
 
 

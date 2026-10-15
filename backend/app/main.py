@@ -1,4 +1,5 @@
 """LynceusVision FastAPI application entry point."""
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,7 @@ from sqlalchemy import select
 from app.api.v1 import v1_router
 from app.config import get_settings
 from app.connectors.registry import CONNECTOR_METADATA
-from app.database import AsyncSessionLocal
+from app.database import AsyncSessionLocal, PersistenceError
 from app.models.models import Source
 from app.security import SSRFBlockedError
 
@@ -67,7 +68,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -89,6 +90,16 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.detail, "code": "HTTP_ERROR"},
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(PersistenceError)
+async def persistence_error_handler(request: Request, exc: PersistenceError) -> JSONResponse:
+    logger.error("Database transaction failed on %s", request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"error": "Database operation failed", "code": "PERSISTENCE_FAILED"},
     )
 
 

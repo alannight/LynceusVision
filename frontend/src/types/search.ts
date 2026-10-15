@@ -113,6 +113,7 @@ export interface SearchProviderConfig {
   id: SearchProvider;
   name: string;
   searchUrl: string;
+  queryParameter: string;
   supportedOperators: SearchOperator[];
   notes?: string;
 }

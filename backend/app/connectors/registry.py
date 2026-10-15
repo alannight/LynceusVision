@@ -1,4 +1,5 @@
 """Connector registry — central registry of all enabled OSINT connectors."""
+
 from __future__ import annotations
 
 from app.connectors.base import BaseConnector
@@ -19,7 +20,9 @@ CONNECTOR_METADATA: list[dict] = [
     {
         "id": "rdap",
         "display_name": "RDAP Domain Lookup",
-        "description": "Registration Data Access Protocol — domain registrar, nameservers, lifecycle dates.",
+        "description": (
+            "Registration Data Access Protocol — domain registrar, nameservers, lifecycle dates."
+        ),
         "source_url": "https://rdap.org",
     },
     {

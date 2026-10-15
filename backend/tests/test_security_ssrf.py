@@ -1,9 +1,18 @@
 """Dedicated unit tests for SSRF protection."""
+
 from __future__ import annotations
+
+import asyncio
+import socket
 
 import pytest
 
-from app.security.ssrf import SSRFBlockedError, clean_target_host, validate_target
+from app.security.ssrf import (
+    SSRFBlockedError,
+    clean_target_host,
+    validate_target,
+    validate_target_async,
+)
 
 
 def test_clean_target_host() -> None:
@@ -13,7 +22,29 @@ def test_clean_target_host() -> None:
     assert clean_target_host("  HTTPS://SUB.DOMAIN.ORG:443  ") == "sub.domain.org"
 
 
-def test_validate_target_public_domain() -> None:
+@pytest.mark.parametrize(
+    "target",
+    [
+        "ftp://example.com",
+        "https://user@example.com",
+        "example.com&next=internal",
+        "example.com:99999",
+        "https://example.com:bad/path",
+    ],
+)
+def test_clean_target_host_rejects_ambiguous_authority(target: str) -> None:
+    with pytest.raises(SSRFBlockedError):
+        clean_target_host(target)
+
+
+def test_validate_target_public_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))
+        ],
+    )
     res = validate_target("example.com")
     assert res == "example.com"
 
@@ -56,6 +87,28 @@ def test_validate_target_empty_target() -> None:
         validate_target("   ")
 
 
-def test_validate_target_unresolvable_domain() -> None:
+def test_validate_target_unresolvable_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*_args: object, **_kwargs: object) -> list[object]:
+        raise socket.gaierror("not found")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fail)
     with pytest.raises(SSRFBlockedError):
         validate_target("this-domain-definitely-does-not-exist-123456789.invalid")
+
+
+@pytest.mark.asyncio
+async def test_async_dns_resolution_blocks_private_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = asyncio.get_running_loop()
+
+    async def private_answer(*_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.1.2.3", 0))]
+
+    monkeypatch.setattr(loop, "getaddrinfo", private_answer)
+    with pytest.raises(SSRFBlockedError):
+        await validate_target_async("rebind.example")
+
+
+@pytest.mark.asyncio
+async def test_ipv4_mapped_ipv6_loopback_is_blocked() -> None:
+    with pytest.raises(SSRFBlockedError):
+        await validate_target_async("::ffff:127.0.0.1")

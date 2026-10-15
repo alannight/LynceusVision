@@ -38,7 +38,7 @@ Named after Lynceus, the Argonaut legendary for superhuman sight.
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
-| Backend | Python 3.14, FastAPI, Pydantic v2 |
+| Backend | Python 3.12, FastAPI, Pydantic v2 |
 | ORM / Migrations | SQLAlchemy 2, Alembic |
 | Primary Database | PostgreSQL 16 |
 | Dev Fallback DB | SQLite (explicit, documented) |
@@ -56,13 +56,26 @@ Named after Lynceus, the Argonaut legendary for superhuman sight.
 git clone <repo>
 cd LynceusVision
 cp .env.example .env
-# Edit .env — fill in DATABASE_URL and any connector API keys
+# Generate two unique values and put them in POSTGRES_PASSWORD and APP_SECRET_KEY in .env.
+# Hex values are URL-safe for the database connection string.
+openssl rand -hex 32
+openssl rand -hex 32
 docker compose up --build
 ```
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
+- Frontend: http://localhost:3000 (loopback only)
+- Backend API: http://localhost:8000 (loopback only)
 - API docs: http://localhost:8000/docs
+- Create an account from the sign-in page. Passwords must be at least 12 characters.
+- Compose applies Alembic migrations before starting the API. PostgreSQL is not published to the host.
+
+Compose requires `POSTGRES_PASSWORD` and `APP_SECRET_KEY`; production refuses to start without them. Set `CORS_ORIGINS` to the exact frontend origin when it differs from localhost. `NEXT_PUBLIC_API_URL` is a public browser URL compiled into the frontend. Never put server credentials there.
+
+For local development with a loopback PostgreSQL port:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
 
 ---
 
@@ -81,14 +94,15 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt  # for backend tests and lint
 cp ../.env.example .env
-# Edit .env — set DATABASE_URL
+# Set DATABASE_URL to the local PostgreSQL/SQLite database and set APP_SECRET_KEY.
 
 # Run migrations (including Dorking Studio tables)
 alembic upgrade head
 
 # Start development server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ### Frontend
@@ -110,7 +124,7 @@ npm run dev
 # Backend tests
 cd backend
 source .venv/bin/activate
-pytest -v
+PYTHONPATH=. python -m pytest -p no:cacheprovider
 
 # Frontend tests
 cd frontend
@@ -212,11 +226,21 @@ See [DORKING_STUDIO.md](docs/DORKING_STUDIO.md) for detailed documentation. Dork
 
 - No API keys or secrets are committed. Use `.env` (not `.env.example`).
 - All outbound connector requests use `httpx` with explicit timeouts.
-- SSRF mitigations validate targets against a private-IP blocklist before any request.
-- Redirect following is disabled on connector requests.
+- Sensitive API routes require a short-lived bearer token. Password hashes use Argon2; investigation and saved-query reads and writes are scoped to their owner.
+- Legacy investigation data remains in place after migration but has no owner and is inaccessible to accounts until an operator explicitly assigns ownership.
+- Connector requests have connect/read/total timeouts and a byte cap on streamed response bodies. Redirects are disabled; RDAP responses that redirect are provider errors until safe pinned redirect support is available.
+- SSRF checks reject private, loopback, link-local, multicast, reserved, and non-global addresses, including IPv4-mapped IPv6. Connector destinations are fixed provider hosts; targets are validated before querying. The HTTP stack does not pin a DNS answer to a socket, so do not add user-controlled request destinations or redirects without connection pinning.
 - Input is validated via Pydantic before reaching the database or any external service.
 - Error responses are sanitized; internal stack traces are not returned to clients.
-- Audit logging is written for every connector invocation.
+- Application logs record connector invocation summaries. This is not a tamper-resistant or complete audit log.
+
+## Collect API and data status
+
+- Omit `connectors` or send `null` to run all enabled connectors. An explicit empty list and unknown connector IDs return HTTP 422.
+- When `save_to_investigation_id` is provided, the investigation must exist and belong to the signed-in account before collection starts.
+- `collection_status` reports `COMPLETE` or `PARTIAL_FAILURE`, with per-connector statuses in `results`. `persistence_status` is `NOT_REQUESTED` or `SAVED`; a database commit failure returns HTTP 500 with `PERSISTENCE_FAILED`.
+- Connector payloads stored by the app are normalized snapshots, not provider wire responses. `CONNECTOR_RESPONSE_MAX_BYTES` defaults to 5 MiB and is enforced while streaming.
+- After upgrading existing databases, old investigation/query rows have no owner and remain inaccessible until an operator explicitly maps them to an account. The migration does not delete or automatically assign old data.
 
 ---
 

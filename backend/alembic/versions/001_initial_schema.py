@@ -5,10 +5,12 @@ Revises: None
 Create Date: 2026-10-12 12:00:00.000000
 
 """
+
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision: str = "001_initial_schema"
 down_revision: str | None = None
@@ -24,8 +26,12 @@ def upgrade() -> None:
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
 
     # 2. entities
@@ -42,9 +48,15 @@ def upgrade() -> None:
         sa.Column("value", sa.String(length=2048), nullable=False),
         sa.Column("label", sa.String(length=255), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("investigation_id", "entity_type", "value", name="uq_entity_per_investigation"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.UniqueConstraint(
+            "investigation_id", "entity_type", "value", name="uq_entity_per_investigation"
+        ),
     )
 
     # 3. sources
@@ -56,7 +68,9 @@ def upgrade() -> None:
         sa.Column("source_url", sa.String(length=512), nullable=True),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
 
     # 4. observations
@@ -77,7 +91,9 @@ def upgrade() -> None:
         ),
         sa.Column("query_context", sa.String(length=2048), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="OK"),
-        sa.Column("collected_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "collected_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("duration_ms", sa.Integer(), nullable=True),
         sa.Column("normalized_data", sa.JSON(), nullable=True),
         sa.Column("raw_response", sa.Text(), nullable=True),

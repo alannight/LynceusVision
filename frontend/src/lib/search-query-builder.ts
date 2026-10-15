@@ -15,22 +15,22 @@ import type {
 // Missing entries are reported as unverified, not silently translated.
 export const SEARCH_PROVIDERS: Record<Exclude<SearchProvider, "custom">, SearchProviderConfig> = {
   google: {
-    id: "google", name: "Google", searchUrl: "https://www.google.com/search",
+    id: "google", name: "Google", searchUrl: "https://www.google.com/search", queryParameter: "q",
     supportedOperators: ["site", "filetype", "after", "before", "exclude", "exact"],
     notes: "Google documents site, filetype, before, after, exact phrases, and exclusions. OR/grouping syntax is not covered by the cited help page.",
   },
   bing: {
-    id: "bing", name: "Bing", searchUrl: "https://www.bing.com/search",
+    id: "bing", name: "Bing", searchUrl: "https://www.bing.com/search", queryParameter: "q",
     supportedOperators: ["site", "filetype", "exact", "exclude", "or"],
     notes: "Microsoft documents site, filetype, exact matching, exclusions, OR, and parenthesized grouping. Date operators are not listed.",
   },
   duckduckgo: {
-    id: "duckduckgo", name: "DuckDuckGo", searchUrl: "https://duckduckgo.com/",
+    id: "duckduckgo", name: "DuckDuckGo", searchUrl: "https://duckduckgo.com/", queryParameter: "q",
     supportedOperators: ["site", "filetype", "intitle", "inurl", "exact", "exclude"],
     notes: "DuckDuckGo documents site, filetype, intitle, inurl, exact phrases, and exclusions. OR/grouping and date operators are not verified.",
   },
   brave: {
-    id: "brave", name: "Brave Search", searchUrl: "https://search.brave.com/search",
+    id: "brave", name: "Brave Search", searchUrl: "https://search.brave.com/search", queryParameter: "q",
     supportedOperators: ["site", "filetype", "exclude", "exact", "or", "intitle"],
     notes: "Brave documents site, filetype, intitle, exact phrases, exclusions, and OR. Date and inurl syntax are not listed, and operator behavior is experimental.",
   },
@@ -176,29 +176,16 @@ export class SearchQueryBuilder {
     const keywords = (filters.mainKeywords ?? []).map(clean).filter(Boolean);
     const logic = filters.keywordLogic;
     const parts: string[] = [];
+    const sites = filters.sites ?? [];
+    if (filters.sites?.some(site => !clean(site.domain))) throw new Error("A selected site filter has an empty domain.");
+    const includedSites = unique(sites.filter(site => !site.exclude).map(site => `site:${validateDomain(site.domain)}`));
+    const excludedSites = unique(sites.filter(site => site.exclude).map(site => `-site:${validateDomain(site.domain)}`));
+    if (includedSites.length === 1) parts.push(includedSites[0]);
+    else if (includedSites.length > 1) parts.push(`(${includedSites.join(" OR ")})`);
 
-    const termGroups = (logic?.termGroups ?? [])
-      .map(group => ({ ...group, terms: group.terms.map(clean).filter(Boolean) }))
-      .filter(group => group.terms.length > 0);
-    const hasTopLevelOr = logic?.operator === "OR";
-    const keywordOperands = hasTopLevelOr
-      ? keywords.map(quoteAlternative)
-      : keywords.length ? [keywords.map(value => {
-          if ((value.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Keyword contains unbalanced quotation marks.");
-          return value;
-        }).join(" ")] : [];
-    const groupOperands = termGroups.map(group => {
-      const terms = group.terms.map(quoteAlternative);
-      if (group.operator === "OR" && terms.length > 1) return `(${terms.join(" OR ")})`;
-      const conjunction = terms.join(" ");
-      return hasTopLevelOr && terms.length > 1 ? `(${conjunction})` : conjunction;
-    });
-    const keywordOperandsWithGroups = [...keywordOperands, ...groupOperands].filter(Boolean);
-    if (hasTopLevelOr && keywordOperandsWithGroups.length > 1) {
-      parts.push(`(${keywordOperandsWithGroups.join(" OR ")})`);
-    } else {
-      parts.push(...keywordOperandsWithGroups);
-    }
+    const types = unique((filters.documentTypes ?? []).map(doc => validateFiletype(doc.filetype)));
+    if (types.length === 1) parts.push(`filetype:${types[0]}`);
+    else if (types.length > 1) parts.push(`(${types.map(type => `filetype:${type}`).join(" OR ")})`);
 
     const phrases = (logic?.exactPhrases ?? []).map(clean).filter(Boolean);
     phrases.forEach(phrase => {
@@ -206,17 +193,23 @@ export class SearchQueryBuilder {
       parts.push(`"${phrase}"`);
     });
 
-    const sites = filters.sites ?? [];
-    if (filters.sites?.some(site => !clean(site.domain))) throw new Error("A selected site filter has an empty domain.");
-    const includedSites = unique(sites.filter(site => !site.exclude).map(site => `site:${validateDomain(site.domain)}`));
-    const excludedSites = unique(sites.filter(site => site.exclude).map(site => `-site:${validateDomain(site.domain)}`));
-    if (includedSites.length === 1) parts.push(includedSites[0]);
-    else if (includedSites.length > 1) parts.push(`(${includedSites.join(" OR ")})`);
-    parts.push(...excludedSites);
+    const mainTerms = keywords.map(value => {
+      if ((value.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Keyword contains unbalanced quotation marks.");
+      return value;
+    });
+    if (mainTerms.length === 1) parts.push(mainTerms[0]);
+    else if (mainTerms.length > 1 && logic?.operator === "OR") {
+      parts.push(`(${mainTerms.map(quoteAlternative).join(" OR ")})`);
+    } else if (mainTerms.length > 0) {
+      parts.push(mainTerms.join(" "));
+    }
 
-    const types = unique((filters.documentTypes ?? []).map(doc => validateFiletype(doc.filetype)));
-    if (types.length === 1) parts.push(`filetype:${types[0]}`);
-    else if (types.length > 1) parts.push(`(${types.map(type => `filetype:${type}`).join(" OR ")})`);
+    for (const group of logic?.termGroups ?? []) {
+      const terms = unique(group.terms.map(clean).filter(Boolean).map(quoteAlternative));
+      if (!terms.length) continue;
+      if (group.operator === "OR" && terms.length > 1) parts.push(`(${terms.join(" OR ")})`);
+      else parts.push(terms.join(" "));
+    }
 
     const attrs = filters.pageAttributes;
     for (const [key, values] of Object.entries(attrs ?? {}) as [keyof PageAttributes, string[] | undefined][]) {
@@ -239,6 +232,7 @@ export class SearchQueryBuilder {
       if ((term.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Excluded term contains unbalanced quotation marks.");
       parts.push(`-${quoteAlternative(term)}`);
     });
+    parts.push(...excludedSites);
 
     // Legacy advanced controls remain represented, but operators without a value are rejected.
     if (filters.advancedOperators?.related?.some(value => clean(value))) {
@@ -262,7 +256,7 @@ export class SearchQueryBuilder {
     if (!finalQuery.trim()) throw new Error("Enter a query before opening search.");
     const provider = this.getProvider();
     const url = new URL(provider.searchUrl);
-    url.searchParams.set("q", finalQuery);
+    url.searchParams.set(provider.queryParameter, finalQuery);
     const operators = this.detectOperators(finalQuery);
     const warnings = operators
       .filter(operator => operator !== "or" && !provider.supportedOperators.includes(operator))

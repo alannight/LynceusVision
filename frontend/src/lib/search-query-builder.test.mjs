@@ -32,30 +32,46 @@ test("keyword only omits all optional operators", () => {
 });
 
 test("one site uses a compact site operator", () => {
-  assert.equal(build({ keywords: ["museum nasional Jakarta"], sites: ["facebook.com"] }).buildQuery(), "museum nasional Jakarta site:facebook.com");
+  assert.equal(build({ keywords: ["museum nasional Jakarta"], sites: ["facebook.com"] }).buildQuery(), "site:facebook.com museum nasional Jakarta");
 });
 
 test("multiple sites are grouped as alternatives", () => {
-  assert.equal(build({ keywords: ["museum nasional"], sites: ["facebook.com", "instagram.com"] }).buildQuery(), "museum nasional (site:facebook.com OR site:instagram.com)");
+  assert.equal(build({ keywords: ["museum nasional"], sites: ["facebook.com", "instagram.com"] }).buildQuery(), "(site:facebook.com OR site:instagram.com) museum nasional");
+});
+
+test("site alternatives scope one keyword without duplicating it", () => {
+  const query = build({ keywords: ["KATA_KUNCI"], sites: ["domain-a.test", "domain-b.test"] }).buildQuery();
+  assert.equal(query, "(site:domain-a.test OR site:domain-b.test) KATA_KUNCI");
+  assert.equal(query.split("KATA_KUNCI").length - 1, 1);
+  assert.doesNotMatch(query, /KATA_KUNCI.*\bOR\b.*KATA_KUNCI/);
 });
 
 test("one file type and one site compose independently", () => {
-  assert.equal(build({ keywords: ["keamanan informasi"], sites: ["upnvj.ac.id"], files: ["pdf"] }).buildQuery(), "keamanan informasi site:upnvj.ac.id filetype:pdf");
+  assert.equal(build({ keywords: ["keamanan informasi"], sites: ["upnvj.ac.id"], files: ["pdf"] }).buildQuery(), "site:upnvj.ac.id filetype:pdf keamanan informasi");
 });
 
 test("multiple file types are grouped without swallowing keywords", () => {
-  assert.equal(build({ keywords: ["keamanan informasi"], files: ["pdf", "docx"] }).buildQuery(), "keamanan informasi (filetype:pdf OR filetype:docx)");
+  assert.equal(build({ keywords: ["keamanan informasi"], files: ["pdf", "docx"] }).buildQuery(), "(filetype:pdf OR filetype:docx) keamanan informasi");
 });
 
 test("exact phrases remain quoted alongside ordinary keywords", () => {
-  assert.equal(build({ keywords: ["security operations center"], exact: ["incident response"] }).buildQuery(), 'security operations center "incident response"');
+  assert.equal(build({ keywords: ["security operations center"], exact: ["incident response"] }).buildQuery(), '"incident response" security operations center');
 });
 
 test("OR alternatives quote multiword alternatives and keep site scope grouped", () => {
   const builder = build({ sites: ["upnvj.ac.id"] });
   builder.setKeywords(["cybersecurity", "keamanan siber"]);
   builder.setKeywordLogic({ operator: "OR", exactPhrases: [], excludeTerms: [], termGroups: [] });
-  assert.equal(builder.buildQuery(), '(cybersecurity OR "keamanan siber") site:upnvj.ac.id');
+  assert.equal(builder.buildQuery(), 'site:upnvj.ac.id (cybersecurity OR "keamanan siber")');
+});
+
+test("main keywords combine with an explicit alternative-keyword group", () => {
+  const builder = build({ keywords: ["laporan tahunan"], sites: ["upnvj.ac.id"] });
+  builder.setKeywordLogic({
+    operator: "AND", exactPhrases: [], excludeTerms: [],
+    termGroups: [{ terms: ["cybersecurity", "keamanan siber"], operator: "OR" }],
+  });
+  assert.equal(builder.buildQuery(), 'site:upnvj.ac.id laporan tahunan (cybersecurity OR "keamanan siber")');
 });
 
 test("explicit term groups retain their AND/OR nesting", () => {
@@ -72,13 +88,13 @@ test("exclusions are appended as negative terms", () => {
 });
 
 test("after, before, and valid date ranges serialize consistently", () => {
-  assert.equal(build({ sites: ["upnvj.ac.id"], keywords: ["cybersecurity"], dates: { startDate: "2024-01-01" } }).buildQuery(), "cybersecurity site:upnvj.ac.id after:2024-01-01");
+  assert.equal(build({ sites: ["upnvj.ac.id"], keywords: ["cybersecurity"], dates: { startDate: "2024-01-01" } }).buildQuery(), "site:upnvj.ac.id cybersecurity after:2024-01-01");
   assert.equal(build({ keywords: ["cybersecurity"], dates: { endDate: "2024-12-31" } }).buildQuery(), "cybersecurity before:2024-12-31");
   assert.equal(build({ keywords: ["cybersecurity"], dates: { startDate: "2024-01-01", endDate: "2024-12-31" } }).buildQuery(), "cybersecurity after:2024-01-01 before:2024-12-31");
 });
 
 test("combined site, file, phrase, and exclusion filters preserve each group", () => {
-  assert.equal(build({ sites: ["upnvj.ac.id", "komdigi.go.id"], files: ["pdf", "docx"], exact: ["keamanan informasi"], exclude: ["lowongan"] }).buildQuery(), '"keamanan informasi" (site:upnvj.ac.id OR site:komdigi.go.id) (filetype:pdf OR filetype:docx) -lowongan');
+  assert.equal(build({ sites: ["upnvj.ac.id", "komdigi.go.id"], files: ["pdf", "docx"], exact: ["keamanan informasi"], exclude: ["lowongan"] }).buildQuery(), '(site:upnvj.ac.id OR site:komdigi.go.id) (filetype:pdf OR filetype:docx) "keamanan informasi" -lowongan');
 });
 
 test("empty input is rejected with a clear message", () => {

@@ -91,7 +91,7 @@ export function SearchSection({
               <button
                 id="submit-collect-btn"
                 type="submit"
-                disabled={loading || !target.trim()}
+                disabled={loading || !target.trim() || selectedConnectors.length === 0}
                 className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-medium px-6 py-2.5 rounded-lg text-sm transition-all shadow-lg shadow-cyan-900/30 flex items-center justify-center gap-2"
               >
                 {loading ? (
@@ -157,6 +157,7 @@ export function SearchSection({
                   <span>{c.label}</span>
                 </label>
               ))}
+              {selectedConnectors.length === 0 && <span className="text-xs text-amber-300">Select at least one connector.</span>}
             </div>
 
             {/* Save to Investigation dropdown */}
@@ -199,10 +200,10 @@ export function SearchSection({
                 Results for: <span className="text-cyan-400">{collectResponse.target}</span>
               </h2>
               <p className="text-xs text-zinc-400">
-                {collectResponse.results.length} connector modules executed
+                {collectResponse.results.length} connector modules executed · {collectResponse.collection_status === "COMPLETE" ? "complete" : "some connectors failed"}
               </p>
             </div>
-            {saveToInvId && (
+            {collectResponse.persistence_status === "SAVED" && (
               <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800/60 px-2.5 py-1 rounded font-mono">
                 Saved to Investigation
               </span>

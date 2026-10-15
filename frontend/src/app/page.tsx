@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Header } from "../components/Header";
 import { SearchSection } from "../components/SearchSection";
 import { DorkingStudio } from "../components/DorkingStudio";
@@ -9,10 +9,28 @@ import { SourcesSection } from "../components/SourcesSection";
 import { Investigation } from "../types";
 import { api } from "../lib/api";
 
+const subscribeAuth = (callback: () => void) => {
+  window.addEventListener("storage", callback);
+  window.addEventListener("lv-auth-change", callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("lv-auth-change", callback);
+  };
+};
+const getAuthToken = () => sessionStorage.getItem("lv_access_token");
+const getServerAuthToken = () => null;
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"search" | "investigations" | "sources" | "dorking">("search");
   const [systemStatus, setSystemStatus] = useState<"online" | "offline" | "checking">("checking");
   const [investigations, setInvestigations] = useState<Investigation[]>([]);
+  const accessToken = useSyncExternalStore(subscribeAuth, getAuthToken, getServerAuthToken);
+  const authenticated = Boolean(accessToken);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -30,7 +48,26 @@ export default function Home() {
     }
   }, []);
 
+  const submitAuth = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      const result = authMode === "register"
+        ? await api.register(username, password)
+        : await api.login(username, password);
+      sessionStorage.setItem("lv_access_token", result.access_token);
+      window.dispatchEvent(new Event("lv-auth-change"));
+      setPassword("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Authentication failed");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
   useEffect(() => {
+    if (!authenticated) return;
     let isMounted = true;
     const checkAndLoad = async () => {
       try {
@@ -57,7 +94,23 @@ export default function Home() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [authenticated]);
+
+  if (!authenticated) {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
+        <form onSubmit={submitAuth} className="w-full max-w-md space-y-4 rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+          <h1 className="text-xl font-semibold">LynceusVision sign in</h1>
+          <p className="text-sm text-zinc-400">Create an account or sign in to access investigation data.</p>
+          <label className="block text-sm">Username<input required minLength={3} maxLength={128} autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-2" /></label>
+          <label className="block text-sm">Password<input required minLength={12} maxLength={256} type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={password} onChange={e => setPassword(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-2" /><span className="mt-1 block text-xs text-zinc-500">Use at least 12 characters.</span></label>
+          {authError && <p role="alert" className="text-sm text-red-300">{authError}</p>}
+          <button disabled={authBusy} className="w-full rounded bg-cyan-700 px-4 py-2 font-medium disabled:opacity-50">{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+          <button type="button" onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(null); }} className="w-full text-sm text-cyan-300">{authMode === "login" ? "Create a new account" : "I already have an account"}</button>
+        </form>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
@@ -66,6 +119,9 @@ export default function Home() {
         setActiveTab={setActiveTab}
         systemStatus={systemStatus}
       />
+      <div className="flex justify-end px-6 pt-3">
+        <button onClick={() => { sessionStorage.removeItem("lv_access_token"); window.dispatchEvent(new Event("lv-auth-change")); setInvestigations([]); }} className="text-xs text-zinc-400 hover:text-white">Sign out</button>
+      </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {systemStatus === "offline" && (
