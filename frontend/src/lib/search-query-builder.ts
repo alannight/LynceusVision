@@ -78,7 +78,7 @@ function validateDomain(domain: string): string {
     throw new Error(`Invalid site domain: ${value}. Enter a hostname only.`);
   }
   const normalized = value.toLowerCase().replace(/\.$/, "");
-  if (normalized.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/.test(normalized)) {
+  if (normalized.length > 253 || !/^(?=.{1,253}$)(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?)(?:\.(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?))*$/u.test(normalized)) {
     throw new Error(`Invalid site domain: ${value}.`);
   }
   return normalized;
@@ -87,7 +87,7 @@ function validateDomain(domain: string): string {
 function validateFiletype(filetype: string): string {
   const value = clean(filetype).toLowerCase().replace(/^\./, "");
   if (!value) throw new Error("A selected file type is empty.");
-  if (!/^[a-z0-9][a-z0-9._+-]{0,31}$/.test(value)) throw new Error(`Invalid file type: ${filetype}.`);
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}._+-]{0,31}$/u.test(value)) throw new Error(`Invalid file type: ${filetype}.`);
   return value;
 }
 

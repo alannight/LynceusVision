@@ -97,3 +97,34 @@ async def test_investigation_isolated_between_accounts(client: httpx.AsyncClient
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_investigation_pagination(client: httpx.AsyncClient) -> None:
+    # Create multiple investigations
+    for i in range(5):
+        await client.post("/api/v1/investigations", json={"title": f"Investigation Batch {i}"})
+
+    # Test limit=2, offset=0
+    res1 = await client.get("/api/v1/investigations?limit=2&offset=0")
+    assert res1.status_code == 200
+    items1 = res1.json()
+    assert len(items1) == 2
+
+    # Test limit=2, offset=2
+    res2 = await client.get("/api/v1/investigations?limit=2&offset=2")
+    assert res2.status_code == 200
+    items2 = res2.json()
+    assert len(items2) == 2
+    assert items1[0]["id"] != items2[0]["id"]
+
+
+def test_production_config_rejects_sqlite() -> None:
+    from app.config import Settings
+    with pytest.raises(ValueError, match="Production environment requires PostgreSQL"):
+        Settings(
+            app_env="production",
+            app_secret_key="a" * 32,
+            database_url="sqlite+aiosqlite:///./test.db",
+        )
+

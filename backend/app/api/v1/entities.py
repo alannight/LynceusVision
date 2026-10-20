@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,22 +96,30 @@ async def create_entity(
 
 
 @router.get("", response_model=list[EntityResponse])
-async def list_entities(investigation_id: str, db: DB, user: CurrentUser) -> list[EntityResponse]:
+async def list_entities(
+    investigation_id: str,
+    db: DB,
+    user: CurrentUser,
+    limit: int = Query(50, ge=1, le=100, description="Max entities to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+) -> list[EntityResponse]:
     await _inv_or_404(investigation_id, db, user.id)
-    result = await db.execute(
-        select(Entity)
+    obs_counts = (
+        select(Observation.entity_id, func.count(Observation.id).label("count"))
+        .group_by(Observation.entity_id)
+        .subquery()
+    )
+    stmt = (
+        select(Entity, func.coalesce(obs_counts.c.count, 0).label("obs_count"))
+        .outerjoin(obs_counts, Entity.id == obs_counts.c.entity_id)
         .where(Entity.investigation_id == investigation_id)
         .order_by(Entity.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
-    entities = result.scalars().all()
-    out = []
-    for entity in entities:
-        count_result = await db.execute(
-            select(func.count()).where(Observation.entity_id == entity.id)
-        )
-        count = count_result.scalar() or 0
-        out.append(_to_entity_response(entity, observation_count=count))
-    return out
+    result = await db.execute(stmt)
+    rows = result.all()
+    return [_to_entity_response(entity, observation_count=count) for entity, count in rows]
 
 
 @router.get("/{entity_id}", response_model=EntityResponse)
@@ -148,13 +156,20 @@ async def delete_entity(investigation_id: str, entity_id: str, db: DB, user: Cur
 
 @router.get("/{entity_id}/observations", response_model=list[ObservationResponse])
 async def list_observations(
-    investigation_id: str, entity_id: str, db: DB, user: CurrentUser
+    investigation_id: str,
+    entity_id: str,
+    db: DB,
+    user: CurrentUser,
+    limit: int = Query(50, ge=1, le=100, description="Max observations to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
 ) -> list[ObservationResponse]:
     await _entity_or_404(entity_id, investigation_id, db, user.id)
     result = await db.execute(
         select(Observation)
         .where(Observation.entity_id == entity_id)
         .order_by(Observation.collected_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     observations = result.scalars().all()
     return [_to_obs_response(obs) for obs in observations]

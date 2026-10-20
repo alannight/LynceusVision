@@ -162,3 +162,57 @@ test("invalid domains, file types, dates, ranges, and incomplete syntax are reje
 test("URL builder rejects unknown or custom providers", () => {
   assert.throws(() => new SearchQueryBuilder({}, "custom").buildSearchUrl("query"), /Unsupported search provider/);
 });
+
+test("supports valid Unicode and IDN domains without rejection", () => {
+  const query = build({ keywords: ["stadtverwaltung"], sites: ["münchen.de"] }).buildQuery();
+  assert.equal(query, "site:münchen.de stadtverwaltung");
+
+  const idnQuery = build({ keywords: ["новости"], sites: ["россия.рф"] }).buildQuery();
+  assert.equal(idnQuery, "site:россия.рф новости");
+});
+
+test("query consistency between Preview, Copy, Open, and Save inputs", () => {
+  const builder = build({
+    keywords: ["keamanan siber"],
+    sites: ["upnvj.ac.id"],
+    files: ["pdf"],
+    exact: ["analisis risiko"],
+    exclude: ["lowongan"],
+    provider: "google",
+  });
+  const expectedQuery = 'site:upnvj.ac.id filetype:pdf "analisis risiko" keamanan siber -lowongan';
+
+  // 1. Preview query
+  const previewQuery = builder.buildQuery();
+  assert.equal(previewQuery, expectedQuery);
+
+  // 2. Serialized query for Copy & Open
+  const serialized = builder.serialize();
+  assert.equal(serialized.query, expectedQuery);
+  assert.equal(new URL(serialized.url).searchParams.get("q"), expectedQuery);
+
+  // 3. Raw query mode retains identical query without mutation
+  const rawValidation = builder.validateRawQuery(expectedQuery);
+  assert.equal(rawValidation.valid, true);
+  assert.equal(builder.serialize(expectedQuery).query, expectedQuery);
+});
+
+test("retains structured filter input across provider changes without corruption", () => {
+  const builder = build({
+    keywords: ["data breach"],
+    sites: ["example.com"],
+    files: ["json"],
+    provider: "google",
+  });
+  const googleQuery = builder.buildQuery();
+  assert.equal(googleQuery, "site:example.com filetype:json data breach");
+
+  builder.setProvider("bing");
+  const bingQuery = builder.buildQuery();
+  assert.equal(bingQuery, "site:example.com filetype:json data breach");
+
+  builder.setProvider("duckduckgo");
+  const ddgQuery = builder.buildQuery();
+  assert.equal(ddgQuery, "site:example.com filetype:json data breach");
+});
+

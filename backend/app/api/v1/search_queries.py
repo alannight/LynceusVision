@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,19 @@ router = APIRouter(prefix="/search-queries", tags=["search-queries"])
 CurrentUser = Annotated[User, Depends(get_current_user)]
 DB = Annotated[AsyncSession, Depends(get_db)]
 
+VALID_SEARCH_PROVIDERS = {"google", "bing", "duckduckgo", "brave", "custom"}
+VALID_SEARCH_CATEGORIES = {
+    "general",
+    "website",
+    "document",
+    "username",
+    "person_name",
+    "organization",
+    "location_place",
+    "custom",
+}
+VALID_SEARCH_STATUSES = {"DRAFT", "READY_TO_OPEN", "OPENED_BY_USER", "OPENED", "SAVED"}
+
 
 # Pydantic schemas
 class SearchQueryBase(BaseModel):
@@ -29,6 +42,27 @@ class SearchQueryBase(BaseModel):
     category: str = Field(default="general")
     structured_filters: dict[str, Any] | None = None
     status: str = Field(default="READY_TO_OPEN")
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        if v not in VALID_SEARCH_PROVIDERS:
+            raise ValueError(f"provider must be one of {sorted(VALID_SEARCH_PROVIDERS)}")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        if v not in VALID_SEARCH_CATEGORIES:
+            raise ValueError(f"category must be one of {sorted(VALID_SEARCH_CATEGORIES)}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        if v not in VALID_SEARCH_STATUSES:
+            raise ValueError(f"status must be one of {sorted(VALID_SEARCH_STATUSES)}")
+        return v
 
 
 class SearchQueryCreate(SearchQueryBase):
@@ -43,6 +77,27 @@ class SearchQueryUpdate(BaseModel):
     category: str | None = None
     structured_filters: dict[str, Any] | None = None
     status: str | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_SEARCH_PROVIDERS:
+            raise ValueError(f"provider must be one of {sorted(VALID_SEARCH_PROVIDERS)}")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_SEARCH_CATEGORIES:
+            raise ValueError(f"category must be one of {sorted(VALID_SEARCH_CATEGORIES)}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_SEARCH_STATUSES:
+            raise ValueError(f"status must be one of {sorted(VALID_SEARCH_STATUSES)}")
+        return v
 
 
 class SearchQueryResponse(SearchQueryBase):
@@ -59,12 +114,16 @@ async def get_search_queries(
     user: CurrentUser,
     session: DB,
     investigation_id: str | None = Query(None, description="Filter by investigation ID"),
+    limit: int = Query(50, ge=1, le=100, description="Max search queries to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
 ) -> list[SearchQueryResponse]:
     """Get all search queries, optionally filtered by investigation."""
     query = (
         select(SearchQuery)
         .where(SearchQuery.owner_id == user.id)
         .order_by(SearchQuery.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
 
     if investigation_id:

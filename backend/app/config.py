@@ -63,8 +63,14 @@ class Settings(BaseSettings):
         return value
 
     def model_post_init(self, __context: object) -> None:
-        if self.app_env == "production" and not self.app_secret_key:
-            raise ValueError("APP_SECRET_KEY is required in production.")
+        if self.app_env == "production":
+            if not self.app_secret_key:
+                raise ValueError("APP_SECRET_KEY is required in production.")
+            if self.database_url and self.database_url.startswith("sqlite"):
+                raise ValueError(
+                    "Production environment requires PostgreSQL (postgresql+asyncpg://). "
+                    "SQLite is only permitted in development or testing."
+                )
         if self.connector_response_max_bytes < 1:
             raise ValueError("CONNECTOR_RESPONSE_MAX_BYTES must be positive.")
 

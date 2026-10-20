@@ -52,3 +52,78 @@ async def test_entity_crud(client: httpx.AsyncClient) -> None:
     # 7. Verify deletion
     verify_res = await client.get(f"/api/v1/investigations/{inv_id}/entities/{ent_id}")
     assert verify_res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_entity_pagination(client: httpx.AsyncClient) -> None:
+    inv = await client.post("/api/v1/investigations", json={"title": "Entity Pagination Test"})
+    inv_id = inv.json()["id"]
+
+    for i in range(5):
+        await client.post(
+            f"/api/v1/investigations/{inv_id}/entities",
+            json={"entity_type": "domain", "value": f"sub{i}.domain.test"},
+        )
+
+    # Test limit=2, offset=0
+    res1 = await client.get(f"/api/v1/investigations/{inv_id}/entities?limit=2&offset=0")
+    assert res1.status_code == 200
+    items1 = res1.json()
+    assert len(items1) == 2
+
+    # Test limit=2, offset=2
+    res2 = await client.get(f"/api/v1/investigations/{inv_id}/entities?limit=2&offset=2")
+    assert res2.status_code == 200
+    items2 = res2.json()
+    assert len(items2) == 2
+    assert items1[0]["id"] != items2[0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_entity_cross_user_isolation(client: httpx.AsyncClient) -> None:
+    from app.database import get_db
+    from app.main import app
+    from app.models.models import User
+    from app.security.auth import create_access_token
+
+    # 1. User A creates investigation and entity
+    inv = await client.post("/api/v1/investigations", json={"title": "User A Investigation"})
+    inv_id = inv.json()["id"]
+    ent = await client.post(
+        f"/api/v1/investigations/{inv_id}/entities",
+        json={"entity_type": "ip", "value": "1.2.3.4"},
+    )
+    ent_id = ent.json()["id"]
+
+    # 2. User B tries to access User A's entity
+    unused_test_hash = "test-only-hash"
+    user_b = User(username="user-b-entities", password_hash=unused_test_hash)
+    session_override = app.dependency_overrides[get_db]
+    async for session in session_override():
+        session.add(user_b)
+        await session.flush()
+        token_b = create_access_token(user_b.id)
+        break
+
+    # Get should be 404
+    b_res = await client.get(
+        f"/api/v1/investigations/{inv_id}/entities/{ent_id}",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert b_res.status_code == 404
+
+    # Patch should be 404
+    b_patch = await client.patch(
+        f"/api/v1/investigations/{inv_id}/entities/{ent_id}",
+        json={"notes": "Hacked"},
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert b_patch.status_code == 404
+
+    # Delete should be 404
+    b_del = await client.delete(
+        f"/api/v1/investigations/{inv_id}/entities/{ent_id}",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert b_del.status_code == 404
+

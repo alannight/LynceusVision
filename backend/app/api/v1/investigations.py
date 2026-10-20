@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,21 +50,28 @@ async def create_investigation(
 
 
 @router.get("", response_model=list[InvestigationResponse])
-async def list_investigations(db: DB, user: CurrentUser) -> list[InvestigationResponse]:
-    result = await db.execute(
-        select(Investigation)
+async def list_investigations(
+    db: DB,
+    user: CurrentUser,
+    limit: int = Query(50, ge=1, le=100, description="Max investigations to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+) -> list[InvestigationResponse]:
+    entity_counts = (
+        select(Entity.investigation_id, func.count(Entity.id).label("count"))
+        .group_by(Entity.investigation_id)
+        .subquery()
+    )
+    stmt = (
+        select(Investigation, func.coalesce(entity_counts.c.count, 0).label("entity_count"))
+        .outerjoin(entity_counts, Investigation.id == entity_counts.c.investigation_id)
         .where(Investigation.owner_id == user.id)
         .order_by(Investigation.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
-    investigations = result.scalars().all()
-    out = []
-    for inv in investigations:
-        count_result = await db.execute(
-            select(func.count()).where(Entity.investigation_id == inv.id)
-        )
-        count = count_result.scalar() or 0
-        out.append(_to_response(inv, entity_count=count))
-    return out
+    result = await db.execute(stmt)
+    rows = result.all()
+    return [_to_response(inv, entity_count=count) for inv, count in rows]
 
 
 @router.get("/{investigation_id}", response_model=InvestigationResponse)
