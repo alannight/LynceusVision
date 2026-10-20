@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.models import User
 from app.security.auth import create_access_token, password_hash
+from app.security.rate_limiter import auth_limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -32,7 +33,12 @@ class TokenResponse(BaseModel):
         return "bearer"
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=TokenResponse)
+@router.post(
+    "/register",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TokenResponse,
+    dependencies=[Depends(auth_limiter)],
+)
 async def register(
     body: Credentials,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -49,7 +55,11 @@ async def register(
     return TokenResponse(access_token=create_access_token(user.id))
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(auth_limiter)],
+)
 async def login(body: Credentials, db: Annotated[AsyncSession, Depends(get_db)]) -> TokenResponse:
     user = await db.scalar(select(User).where(User.username == body.username))
     if user is None or not password_hash.verify(body.password, user.password_hash):

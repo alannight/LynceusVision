@@ -20,6 +20,7 @@ from app.database import PersistenceError, get_db
 from app.models.models import Entity, Investigation, Observation, Source, User
 from app.schemas import CollectRequest, CollectResponse, ConnectorResult
 from app.security.auth import get_current_user
+from app.security.rate_limiter import collect_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/collect", tags=["Collect"])
@@ -37,7 +38,7 @@ FAILED_CONNECTOR_STATUSES = {
 }
 
 
-@router.post("", response_model=CollectResponse)
+@router.post("", response_model=CollectResponse, dependencies=[Depends(collect_limiter)])
 async def collect(body: CollectRequest, db: DB, user: CurrentUser) -> CollectResponse:
     """
     Run one or more OSINT connectors against a target.

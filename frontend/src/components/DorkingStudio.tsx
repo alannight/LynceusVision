@@ -10,6 +10,7 @@ import {
   DocumentTypeFilter,
   SearchProvider,
   SearchCategory,
+  SearchQuery,
   SearchQueryCreateRequest,
 } from "../types/search";
 
@@ -36,6 +37,8 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [savedQueries, setSavedQueries] = useState<SearchQuery[]>([]);
+  const [loadingQueries, setLoadingQueries] = useState(false);
 
   // Site selection state
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -323,12 +326,51 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       
-      // Refresh investigations list
+      // Refresh investigations and saved queries list
       await onRefreshInvestigations();
+      await loadSavedQueries();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Failed to save query");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const loadSavedQueries = useCallback(async () => {
+    setLoadingQueries(true);
+    try {
+      const res = await api.getSearchQueries(selectedInvestigation || undefined);
+      setSavedQueries(res);
+    } catch (err) {
+      console.error("Failed to load saved queries", err);
+    } finally {
+      setLoadingQueries(false);
+    }
+  }, [selectedInvestigation]);
+
+  React.useEffect(() => {
+    void loadSavedQueries();
+  }, [loadSavedQueries]);
+
+  const handleDeleteSavedQuery = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this saved query?")) return;
+    try {
+      await api.deleteSearchQuery(id);
+      await loadSavedQueries();
+    } catch (err) {
+      console.error("Failed to delete saved query", err);
+    }
+  };
+
+  const handleOpenSavedQuery = (sq: SearchQuery) => {
+    try {
+      const providerConfig =
+        SEARCH_PROVIDERS[sq.provider as keyof typeof SEARCH_PROVIDERS] || SEARCH_PROVIDERS.google;
+      const url = new URL(providerConfig.searchUrl);
+      url.searchParams.set(providerConfig.queryParameter, sq.query_text);
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Failed to open saved query", err);
     }
   };
 
@@ -885,6 +927,85 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
           Query syntax and operator support vary by search engine. The preview shows the query as it will be sent, 
           but some providers may ignore or interpret operators differently. Check provider documentation for details.
         </p>
+      </div>
+
+      {/* Saved Queries / Investigation Dorks Section */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold font-mono uppercase text-white tracking-wider">
+              Saved Queries & Dorks ({savedQueries.length})
+            </h2>
+            {selectedInvestigation && (
+              <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800/60">
+                Filtered by selected case
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => void loadSavedQueries()}
+            className="text-xs text-zinc-400 hover:text-white font-mono transition-colors"
+          >
+            ↻ Refresh
+          </button>
+        </div>
+
+        {loadingQueries ? (
+          <div className="text-xs font-mono text-zinc-500 py-4 text-center">Loading saved queries...</div>
+        ) : savedQueries.length === 0 ? (
+          <div className="text-xs font-mono text-zinc-500 py-6 text-center bg-zinc-950/40 rounded-lg border border-zinc-800/60">
+            No saved search queries found. Use &quot;Save to Investigation&quot; above to store dorks with your case!
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {savedQueries.map((sq) => (
+              <div
+                key={sq.id}
+                className="bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700 rounded-lg p-4 space-y-2.5 transition-colors"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-white">{sq.title}</span>
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60 font-bold">
+                      {sq.provider}
+                    </span>
+                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                      {sq.category}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-zinc-500">
+                    {new Date(sq.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded p-2 text-xs font-mono text-zinc-300 break-all select-all">
+                  {sq.query_text}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(sq.query_text)}
+                    className="text-xs font-mono text-zinc-400 hover:text-white px-2 py-1 rounded bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onClick={() => handleOpenSavedQuery(sq)}
+                    className="text-xs font-mono text-cyan-400 hover:text-cyan-300 px-2.5 py-1 rounded bg-cyan-950/60 border border-cyan-800/60 hover:bg-cyan-900/60 transition-colors"
+                  >
+                    Open in {sq.provider} ↗
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSavedQuery(sq.id)}
+                    className="text-xs font-mono text-red-400 hover:text-red-300 px-2 py-1 rounded bg-zinc-900 border border-zinc-800 hover:border-red-900 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
