@@ -136,7 +136,7 @@ def validate_target(target: str) -> str:
 
     if is_literal_ip:
         if _is_ip_blocked(literal_ip):
-            logger.warning("SSRF blocked: literal IP %s is private or reserved", hostname)
+            logger.warning("SSRF blocked: literal IP is private or reserved")
             raise SSRFBlockedError(f"Target {hostname!r} is a private or reserved address")
         return hostname
 
@@ -154,7 +154,7 @@ def validate_target(target: str) -> str:
             raise SSRFBlockedError(f"Target resolved to unparseable IP: {ip_str}") from None
 
         if _is_ip_blocked(parsed):
-            logger.warning("SSRF blocked: %s resolved to private address %s", hostname, ip_str)
+            logger.warning("SSRF blocked: hostname resolved to a private or reserved address")
             raise SSRFBlockedError(
                 f"Target {hostname!r} resolves to a private or reserved address ({ip_str})"
             )

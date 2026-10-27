@@ -66,7 +66,7 @@ class WaybackConnector(BaseConnector):
                 query, "TIMEOUT", None, self._elapsed_ms(start), "Total request time exceeded"
             )
         except httpx.TimeoutException:
-            logger.warning("Wayback CDX timeout for %s", target)
+            logger.warning("Wayback CDX provider timed out")
             return self._result(
                 query, "TIMEOUT", None, self._elapsed_ms(start), "Request timed out"
             )

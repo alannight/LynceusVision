@@ -63,12 +63,26 @@ export interface QueryValidation {
 
 const clean = (value: string | undefined): string => value?.trim() ?? "";
 const unique = <T,>(values: T[]): T[] => [...new Set(values)];
+const normalizeSpace = (value: string): string => value.trim().replace(/\s+/gu, " ");
 
 function quoteAlternative(value: string): string {
-  const trimmed = value.trim();
+  const trimmed = normalizeSpace(value);
   if (!trimmed) return "";
   if ((trimmed.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Keyword contains unbalanced quotation marks.");
-  return /\s/.test(trimmed) && !trimmed.startsWith('"') ? `"${trimmed}"` : trimmed;
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed;
+  if (/[()]/.test(trimmed) || /\b(?:AND|OR)\b/i.test(trimmed) || /\b(?:site|filetype|ext|intitle|inurl|intext):/i.test(trimmed)) {
+    throw new Error("Structured keyword contains query syntax. Use a structured filter or raw query mode.");
+  }
+  return /\s/.test(trimmed) ? `"${trimmed}"` : trimmed;
+}
+
+function exactPhrase(value: string): string {
+  const normalized = normalizeSpace(value);
+  if (!normalized) return "";
+  if ((normalized.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Exact phrase contains unbalanced quotation marks.");
+  const phrase = normalized.startsWith('"') && normalized.endsWith('"') ? normalized.slice(1, -1).trim() : normalized;
+  if (!phrase) throw new Error("Exact phrase cannot be empty.");
+  return `"${phrase}"`;
 }
 
 function validateDomain(domain: string): string {
@@ -128,6 +142,7 @@ function validateQuerySyntax(query: string): string[] {
   });
   if (/\(\s*\)/.test(outsideQuotes)) errors.push("Query cannot contain an empty group.");
   if (/\b(?:site|filetype|after|before|related|cache|ext):(?:\s|$)/i.test(query)) errors.push("Search operators must have a value with no space after the colon.");
+  if (/(?:^|\s)""(?=\s|$|[)])/.test(query)) errors.push("Exact phrase cannot be empty.");
   for (const match of outsideQuotes.matchAll(/(?:^|\s|\()(-?site:)([^\s)]+)/gi)) {
     try { validateDomain(match[2]); }
     catch (error) { errors.push(error instanceof Error ? error.message : "Invalid site domain."); }
@@ -135,6 +150,10 @@ function validateQuerySyntax(query: string): string[] {
   for (const match of outsideQuotes.matchAll(/(?:^|\s|\()(filetype:)([^\s)]+)/gi)) {
     try { validateFiletype(match[2]); }
     catch (error) { errors.push(error instanceof Error ? error.message : "Invalid file type."); }
+  }
+  for (const match of outsideQuotes.matchAll(/(?:^|\s|\()(ext:)([^\s)]+)/gi)) {
+    try { validateFiletype(match[2]); }
+    catch (error) { errors.push(error instanceof Error ? error.message : "Invalid file extension."); }
   }
   for (const match of outsideQuotes.matchAll(/\b(after|before):([^\s)]+)/gi)) {
     try { formatDate(match[2], match[1]); }
@@ -175,64 +194,81 @@ export class SearchQueryBuilder {
     const filters = this.filters;
     const keywords = (filters.mainKeywords ?? []).map(clean).filter(Boolean);
     const logic = filters.keywordLogic;
-    const parts: string[] = [];
+    const siteParts: string[] = [];
+    const attributeParts: string[] = [];
+    const textParts: string[] = [];
+    const formatParts: string[] = [];
+    const trailingParts: string[] = [];
     const sites = filters.sites ?? [];
     if (filters.sites?.some(site => !clean(site.domain))) throw new Error("A selected site filter has an empty domain.");
     const includedSites = unique(sites.filter(site => !site.exclude).map(site => `site:${validateDomain(site.domain)}`));
     const excludedSites = unique(sites.filter(site => site.exclude).map(site => `-site:${validateDomain(site.domain)}`));
-    if (includedSites.length === 1) parts.push(includedSites[0]);
-    else if (includedSites.length > 1) parts.push(`(${includedSites.join(" OR ")})`);
+    if (includedSites.length === 1) siteParts.push(includedSites[0]);
+    else if (includedSites.length > 1) siteParts.push(`(${includedSites.join(" OR ")})`);
 
-    const types = unique((filters.documentTypes ?? []).map(doc => validateFiletype(doc.filetype)));
-    if (types.length === 1) parts.push(`filetype:${types[0]}`);
-    else if (types.length > 1) parts.push(`(${types.map(type => `filetype:${type}`).join(" OR ")})`);
-
-    const phrases = (logic?.exactPhrases ?? []).map(clean).filter(Boolean);
-    phrases.forEach(phrase => {
-      if ((phrase.match(/"/g) ?? []).length > 0) throw new Error("Exact phrases must not include quotation marks; the builder adds them.");
-      parts.push(`"${phrase}"`);
-    });
+    const phrases = (logic?.exactPhrases ?? []).map(exactPhrase).filter(Boolean);
+    if (phrases.length > 1 && logic?.exactPhraseOperator === "OR") textParts.push(`(${phrases.join(" OR ")})`);
+    else if (phrases.length > 1 && logic?.exactPhraseOperator === "AND") textParts.push(phrases.join(" AND "));
+    else textParts.push(...phrases);
 
     const mainTerms = keywords.map(value => {
-      if ((value.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Keyword contains unbalanced quotation marks.");
-      return value;
-    });
-    if (mainTerms.length === 1) parts.push(mainTerms[0]);
+      const normalized = normalizeSpace(value);
+      if ((normalized.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Keyword contains unbalanced quotation marks.");
+      if (!normalized.startsWith('"') && (/\b(?:AND|OR)\b/i.test(normalized) || /\b(?:site|filetype|ext|intitle|inurl|intext):/i.test(normalized))) {
+        throw new Error("Structured keyword contains query syntax. Use a structured filter or raw query mode.");
+      }
+      return normalized;
+    }).filter(Boolean);
+    if (mainTerms.length === 1) textParts.push(mainTerms[0]);
     else if (mainTerms.length > 1 && logic?.operator === "OR") {
-      parts.push(`(${mainTerms.map(quoteAlternative).join(" OR ")})`);
+      textParts.push(`(${mainTerms.map(quoteAlternative).join(" OR ")})`);
     } else if (mainTerms.length > 0) {
-      parts.push(mainTerms.join(" "));
+      textParts.push(mainTerms.join(" "));
     }
 
     for (const group of logic?.termGroups ?? []) {
-      const terms = unique(group.terms.map(clean).filter(Boolean).map(quoteAlternative));
+      const terms = group.terms.map(quoteAlternative).filter(Boolean);
+      if (group.operator === "OR" && terms.length < 2) throw new Error("An OR group must contain at least two non-empty alternatives.");
       if (!terms.length) continue;
-      if (group.operator === "OR" && terms.length > 1) parts.push(`(${terms.join(" OR ")})`);
-      else parts.push(terms.join(" "));
+      if (group.operator === "OR" && terms.length > 1) textParts.push(`(${terms.join(" OR ")})`);
+      else if (group.operator === "AND" && terms.length > 1) textParts.push(terms.join(" AND "));
+      else textParts.push(terms[0]);
+    }
+
+    const docsByOperator = new Map<string, string[]>();
+    for (const doc of filters.documentTypes ?? []) {
+      const operator = doc.operator ?? "filetype";
+      const values = docsByOperator.get(operator) ?? [];
+      values.push(validateFiletype(doc.filetype));
+      docsByOperator.set(operator, values);
+    }
+    for (const [operator, rawValues] of docsByOperator) {
+      const values = unique(rawValues);
+      if (values.length === 1) formatParts.push(`${operator}:${values[0]}`);
+      else if (values.length > 1) formatParts.push(`(${values.map(value => `${operator}:${value}`).join(" OR ")})`);
     }
 
     const attrs = filters.pageAttributes;
     for (const [key, values] of Object.entries(attrs ?? {}) as [keyof PageAttributes, string[] | undefined][]) {
-      const normalized = (values ?? []).map(clean).filter(Boolean);
+      const normalized = (values ?? []).map(normalizeSpace).filter(Boolean);
       if (!normalized.length) continue;
       const op = key as SearchOperator;
       if (normalized.length > 1) {
-        parts.push(`(${normalized.map(value => `${op}:${quoteAlternative(value)}`).join(" OR ")})`);
-      } else parts.push(`${op}:${quoteAlternative(normalized[0])}`);
+        attributeParts.push(`(${normalized.map(value => `${op}:${quoteAlternative(value)}`).join(" OR ")})`);
+      } else attributeParts.push(`${op}:${quoteAlternative(normalized[0])}`);
     }
 
     const start = formatDate(filters.dateFilters?.startDate ?? "", "after");
     const end = formatDate(filters.dateFilters?.endDate ?? "", "before");
     if (start && end && start > end) throw new Error("Start date must be on or before end date.");
-    if (start) parts.push(`after:${start}`);
-    if (end) parts.push(`before:${end}`);
+    if (start) trailingParts.push(`after:${start}`);
+    if (end) trailingParts.push(`before:${end}`);
 
     const excluded = (logic?.excludeTerms ?? []).map(clean).filter(Boolean);
+    trailingParts.push(...excludedSites);
     excluded.forEach(term => {
-      if ((term.match(/"/g) ?? []).length % 2 !== 0) throw new Error("Excluded term contains unbalanced quotation marks.");
-      parts.push(`-${quoteAlternative(term)}`);
+      trailingParts.push(`-${exactPhrase(term)}`);
     });
-    parts.push(...excludedSites);
 
     // Legacy advanced controls remain represented, but operators without a value are rejected.
     if (filters.advancedOperators?.related?.some(value => clean(value))) {
@@ -240,11 +276,13 @@ export class SearchQueryBuilder {
     }
     if (filters.advancedOperators?.cache) throw new Error("The cache: operator requires a value and is not supported by this builder.");
     if (filters.advancedOperators?.ext?.some(value => clean(value))) {
-      throw new Error("Use the file type filter; ext: compatibility is not verified consistently.");
+      const extensions = unique(filters.advancedOperators.ext.map(validateFiletype));
+      if (extensions.length === 1) formatParts.push(`ext:${extensions[0]}`);
+      else formatParts.push(`(${extensions.map(value => `ext:${value}`).join(" OR ")})`);
     }
     if (filters.advancedOperators?.around) throw new Error("AROUND(n) compatibility is not verified across providers.");
 
-    const query = parts.filter(Boolean).join(" ").trim();
+    const query = [...siteParts, ...attributeParts, ...textParts, ...formatParts, ...trailingParts].filter(Boolean).join(" ").trim();
     if (!query) throw new Error("Enter a keyword, exact phrase, or search filter before continuing.");
     const errors = validateQuerySyntax(query);
     if (errors.length) throw new Error(errors[0]);
@@ -304,6 +342,7 @@ export class SearchQueryBuilder {
     if (/\bcache:/i.test(query)) found.add("cache");
     if (/\bext:/i.test(query)) found.add("ext");
     if (/\bAROUND\s*\(/i.test(query)) found.add("around");
+    if (/\bAND\b/.test(query)) found.add("and");
     if (/(?:^|\s)-\S/.test(query)) found.add("exclude");
     if (/"[^"\n]+"/.test(query)) found.add("exact");
     if (/\bOR\b/.test(query)) found.add("or");

@@ -16,7 +16,7 @@ _REGISTRY: dict[str, BaseConnector] = {
 }
 
 # Source metadata for DB seeding
-CONNECTOR_METADATA: list[dict] = [
+CONNECTOR_METADATA: list[dict[str, str]] = [
     {
         "id": "rdap",
         "display_name": "RDAP Domain Lookup",

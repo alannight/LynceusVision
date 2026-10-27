@@ -20,14 +20,14 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 class Credentials(BaseModel):
     username: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
 
 
 class TokenResponse(BaseModel):
     access_token: str
     expires_in: int = 1800
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def token_type(self) -> str:
         return "bearer"

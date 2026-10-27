@@ -66,7 +66,7 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(length=128), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("source_url", sa.String(length=512), nullable=True),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()

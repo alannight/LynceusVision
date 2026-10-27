@@ -55,6 +55,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
   const [excludeTermInput, setExcludeTermInput] = useState("");
   const [exactPhrases, setExactPhrases] = useState<string[]>([]);
   const [exactPhraseInput, setExactPhraseInput] = useState("");
+  const [exactPhraseOperator, setExactPhraseOperator] = useState<"implicit" | "AND" | "OR">("implicit");
 
   // Page attributes
   const [intitle, setIntitle] = useState("");
@@ -130,11 +131,12 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
       operator: "AND" as const,
       excludeTerms,
       exactPhrases,
+      exactPhraseOperator: exactPhraseOperator === "implicit" ? undefined : exactPhraseOperator,
       termGroups: alternativeKeywords.length
         ? [{ terms: alternativeKeywords, operator: "OR" as const }]
         : [],
     };
-  }, [filters.mainKeywords, exactPhrases, excludeTerms, alternativeKeywordsInput]);
+  }, [filters.mainKeywords, exactPhrases, exactPhraseOperator, excludeTerms, alternativeKeywordsInput]);
 
   const getPageAttributes = useCallback((): StructuredFilters["pageAttributes"] => {
     const attrs: NonNullable<StructuredFilters["pageAttributes"]> = {};
@@ -266,6 +268,7 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
     setExcludeTermInput("");
     setExactPhrases([]);
     setExactPhraseInput("");
+    setExactPhraseOperator("implicit");
     setIntitle("");
     setInurl("");
     setIntext("");
@@ -661,6 +664,21 @@ export function DorkingStudio({ investigations, onRefreshInvestigations }: Dorki
                 >
                   Add
                 </button>
+              </div>
+              <div className="mt-3 max-w-xs">
+                <label className="block text-xs font-medium text-zinc-400 mb-1" htmlFor="exact-phrase-operator">
+                  Connect multiple exact phrases
+                </label>
+                <select
+                  id="exact-phrase-operator"
+                  value={exactPhraseOperator}
+                  onChange={(e) => setExactPhraseOperator(e.target.value as "implicit" | "AND" | "OR")}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                >
+                  <option value="implicit">AND (implicit)</option>
+                  <option value="AND">AND (explicit)</option>
+                  <option value="OR">OR</option>
+                </select>
               </div>
               {exactPhrases.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">

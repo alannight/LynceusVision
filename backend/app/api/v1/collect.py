@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors import get_all_connectors, get_connector
+from app.connectors.base import BaseConnector
 from app.database import PersistenceError, get_db
 from app.models.models import Entity, Investigation, Observation, Source, User
 from app.schemas import CollectRequest, CollectResponse, ConnectorResult
@@ -55,9 +56,12 @@ async def collect(body: CollectRequest, db: DB, user: CurrentUser) -> CollectRes
                     "connectors."
                 ),
             )
-        connectors = [get_connector(connector_id) for connector_id in body.connectors]
-        if any(connector is None for connector in connectors):
+        resolved_connectors = [get_connector(connector_id) for connector_id in body.connectors]
+        if any(connector is None for connector in resolved_connectors):
             raise HTTPException(status_code=422, detail="One or more connector IDs are unknown.")
+        connectors: list[BaseConnector] = [
+            connector for connector in resolved_connectors if connector is not None
+        ]
     else:
         connectors = get_all_connectors()
 
@@ -72,7 +76,7 @@ async def collect(body: CollectRequest, db: DB, user: CurrentUser) -> CollectRes
             raise HTTPException(status_code=404, detail="Investigation not found")
 
     # Run all connectors concurrently
-    tasks = [c.collect(body.target) for c in connectors if c is not None]
+    tasks = [connector.collect(body.target) for connector in connectors]
     results: list[ConnectorResult] = await asyncio.gather(*tasks)
 
     # Optionally persist
@@ -85,8 +89,7 @@ async def collect(body: CollectRequest, db: DB, user: CurrentUser) -> CollectRes
             raise PersistenceError("Collection results could not be committed") from exc
 
     logger.info(
-        "Collect %r: %d connectors, statuses=%s",
-        body.target,
+        "Collect completed: %d connectors, statuses=%s",
         len(results),
         [r.status for r in results],
     )

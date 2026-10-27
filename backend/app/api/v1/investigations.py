@@ -45,7 +45,7 @@ async def create_investigation(
     db.add(inv)
     await db.flush()
     await db.refresh(inv)
-    logger.info("Created investigation %s: %r", inv.id, inv.title)
+    logger.info("Created investigation %s", inv.id)
     return _to_response(inv, entity_count=0)
 
 

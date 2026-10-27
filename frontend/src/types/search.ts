@@ -60,6 +60,7 @@ export interface SiteFilter {
 export interface DocumentTypeFilter {
   filetype: string;
   extension?: string;
+  operator?: 'filetype' | 'ext';
 }
 
 export interface KeywordLogic {
@@ -67,6 +68,7 @@ export interface KeywordLogic {
   excludeTerms: string[];
   exactPhrases: string[];
   termGroups: TermGroup[];
+  exactPhraseOperator?: 'AND' | 'OR';
 }
 
 export interface TermGroup {
@@ -135,6 +137,7 @@ export type SearchOperator =
   | 'around'
   | 'exact'
   | 'exclude'
+  | 'and'
   | 'or';
 
 export interface SearchQueryCreateRequest {

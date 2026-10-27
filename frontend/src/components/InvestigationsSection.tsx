@@ -25,6 +25,9 @@ export function InvestigationsSection({
   onRefresh,
 }: InvestigationsSectionProps) {
   const [selectedInvId, setSelectedInvId] = useState<string | null>(null);
+  const activeInvestigationId = selectedInvId && investigations.some((inv) => inv.id === selectedInvId)
+    ? selectedInvId
+    : investigations[0]?.id ?? null;
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [observations, setObservations] = useState<Observation[]>([]);
@@ -59,22 +62,15 @@ export function InvestigationsSection({
   // Export state
   const [isExporting, setIsExporting] = useState(false);
 
-  // Select first investigation if none selected
-  useEffect(() => {
-    if (!selectedInvId && investigations.length > 0) {
-      setSelectedInvId(investigations[0].id);
-    }
-  }, [investigations, selectedInvId]);
-
   // Load entities when selected investigation changes
   useEffect(() => {
     let isMounted = true;
-    if (!selectedInvId) return;
+    if (!activeInvestigationId) return;
 
     const loadEntities = async () => {
       setLoadingDetails(true);
       try {
-        const ents = await api.getEntities(selectedInvId);
+        const ents = await api.getEntities(activeInvestigationId);
         if (isMounted) {
           setEntities(ents);
           if (ents.length > 0) {
@@ -95,16 +91,16 @@ export function InvestigationsSection({
     return () => {
       isMounted = false;
     };
-  }, [selectedInvId]);
+  }, [activeInvestigationId]);
 
   // Load observations when selected entity changes
   useEffect(() => {
     let isMounted = true;
-    if (!selectedInvId || !selectedEntityId) return;
+    if (!activeInvestigationId || !selectedEntityId) return;
 
     const loadObservations = async () => {
       try {
-        const obs = await api.getObservations(selectedInvId, selectedEntityId);
+        const obs = await api.getObservations(activeInvestigationId, selectedEntityId);
         if (isMounted) setObservations(obs);
       } catch (err) {
         console.error("Failed to load observations", err);
@@ -115,7 +111,7 @@ export function InvestigationsSection({
     return () => {
       isMounted = false;
     };
-  }, [selectedInvId, selectedEntityId]);
+  }, [activeInvestigationId, selectedEntityId]);
 
   const handleSelectInv = (id: string) => {
     setSelectedInvId(id);
@@ -149,7 +145,7 @@ export function InvestigationsSection({
     if (!confirm("Are you sure you want to delete this investigation and all its entities?")) return;
     try {
       await api.deleteInvestigation(id);
-      if (selectedInvId === id) {
+      if (activeInvestigationId === id) {
         setSelectedInvId(null);
         setEntities([]);
         setSelectedEntityId(null);
@@ -171,11 +167,11 @@ export function InvestigationsSection({
 
   const handleSaveInvestigation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInvId || !editTitle.trim()) return;
+    if (!activeInvestigationId || !editTitle.trim()) return;
 
     setEditLoading(true);
     try {
-      await api.updateInvestigation(selectedInvId, {
+      await api.updateInvestigation(activeInvestigationId, {
         title: editTitle.trim(),
         description: editDesc.trim() || undefined,
         status: editStatus,
@@ -191,12 +187,12 @@ export function InvestigationsSection({
 
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInvId || !newEntityValue.trim()) return;
+    if (!activeInvestigationId || !newEntityValue.trim()) return;
 
     setAddEntityLoading(true);
     setEntityError(null);
     try {
-      const created = await api.createEntity(selectedInvId, {
+      const created = await api.createEntity(activeInvestigationId, {
         entity_type: newEntityType,
         value: newEntityValue.trim(),
         label: newEntityLabel.trim() || undefined,
@@ -217,10 +213,10 @@ export function InvestigationsSection({
   };
 
   const handleDeleteEntity = async (entityId: string) => {
-    if (!selectedInvId) return;
+    if (!activeInvestigationId) return;
     if (!confirm("Are you sure you want to delete this entity and its observations?")) return;
     try {
-      await api.deleteEntity(selectedInvId, entityId);
+      await api.deleteEntity(activeInvestigationId, entityId);
       const remaining = entities.filter((e) => e.id !== entityId);
       setEntities(remaining);
       if (selectedEntityId === entityId) {
@@ -275,7 +271,7 @@ export function InvestigationsSection({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `case-${selectedInv.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}.json`;
+      a.download = `case-${selectedInv.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${selectedInv.id}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -295,7 +291,7 @@ export function InvestigationsSection({
     return matchesSearch && matchesStatus;
   });
 
-  const selectedInv = investigations.find((i) => i.id === selectedInvId);
+  const selectedInv = investigations.find((i) => i.id === activeInvestigationId);
   const selectedEntity = entities.find((e) => e.id === selectedEntityId);
 
   return (
@@ -397,7 +393,7 @@ export function InvestigationsSection({
                 key={inv.id}
                 onClick={() => handleSelectInv(inv.id)}
                 className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  selectedInvId === inv.id
+                  activeInvestigationId === inv.id
                     ? "bg-zinc-800 border-cyan-500/80 shadow-lg shadow-cyan-950/20"
                     : "bg-zinc-900/80 border-zinc-800 hover:bg-zinc-800/50 hover:border-zinc-700"
                 }`}
@@ -640,7 +636,7 @@ export function InvestigationsSection({
                 <div className="text-xs text-zinc-500 font-mono">Loading case entities...</div>
               ) : entities.length === 0 ? (
                 <div className="bg-zinc-950/60 border border-zinc-800 rounded-lg p-6 text-center text-zinc-500 text-xs font-mono">
-                  No entities added to this investigation yet. Use "+ Add Entity" or run a Global Collect query!
+                  No entities added to this investigation yet. Use &quot;+ Add Entity&quot; or run a Global Collect query!
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -11,6 +11,8 @@ from sqlalchemy.orm import DeclarativeBase
 from app.config import get_settings
 
 settings = get_settings()
+if settings.database_url is None:  # Defensive guard for static typing; Settings rejects this.
+    raise RuntimeError("DATABASE_URL must be configured before initializing the database engine")
 
 
 class PersistenceError(Exception):

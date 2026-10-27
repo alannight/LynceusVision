@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Database must be explicit; there is no silent fallback.
     database_url: str | None = None
+    rate_limit_redis_url: str | None = None
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]
@@ -71,6 +72,10 @@ class Settings(BaseSettings):
                     "Production environment requires PostgreSQL (postgresql+asyncpg://). "
                     "SQLite is only permitted in development or testing."
                 )
+            if not self.rate_limit_redis_url or not self.rate_limit_redis_url.startswith(
+                ("redis://", "rediss://")
+            ):
+                raise ValueError("RATE_LIMIT_REDIS_URL must be configured in production.")
         if self.connector_response_max_bytes < 1:
             raise ValueError("CONNECTOR_RESPONSE_MAX_BYTES must be positive.")
 

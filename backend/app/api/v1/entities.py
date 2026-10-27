@@ -91,7 +91,7 @@ async def create_entity(
     db.add(entity)
     await db.flush()
     await db.refresh(entity)
-    logger.info("Created entity %s (%s: %s)", entity.id, entity.entity_type, entity.value)
+    logger.info("Created entity %s (type=%s)", entity.id, entity.entity_type)
     return _to_entity_response(entity, observation_count=0)
 
 

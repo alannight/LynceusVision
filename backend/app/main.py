@@ -18,6 +18,7 @@ from app.connectors.registry import CONNECTOR_METADATA
 from app.database import AsyncSessionLocal, PersistenceError
 from app.models.models import Source
 from app.security import SSRFBlockedError
+from app.security.rate_limiter import close_rate_limit_clients
 
 logger = logging.getLogger("lynceusvision")
 settings = get_settings()
@@ -42,7 +43,7 @@ async def _seed_sources() -> None:
             await session.commit()
             logger.info("Successfully seeded sources registry")
     except Exception as exc:
-        logger.warning("Failed to seed sources during startup: %s", exc)
+        logger.warning("Failed to seed sources during startup (%s)", type(exc).__name__)
 
 
 @asynccontextmanager
@@ -51,8 +52,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings.configure_logging()
     logger.info("Starting LynceusVision backend (env=%s)", settings.app_env)
     await _seed_sources()
-    yield
-    logger.info("Shutting down LynceusVision backend")
+    try:
+        yield
+    finally:
+        await close_rate_limit_clients()
+        logger.info("Shutting down LynceusVision backend")
 
 
 app = FastAPI(
@@ -78,7 +82,7 @@ app.add_middleware(
 
 @app.exception_handler(SSRFBlockedError)
 async def ssrf_blocked_handler(request: Request, exc: SSRFBlockedError) -> JSONResponse:
-    logger.warning("SSRF blocked on %s: %s", request.url.path, exc)
+    logger.warning("SSRF blocked on %s", request.url.path)
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"error": str(exc), "code": "SSRF_BLOCKED"},
@@ -105,7 +109,7 @@ async def persistence_error_handler(request: Request, exc: PersistenceError) -> 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("Unhandled server exception on %s: %s", request.url.path, exc)
+    logger.error("Unhandled server exception on %s (%s)", request.url.path, type(exc).__name__)
     # Sanitized response: never leak internal stack traces to clients (Rule 2.5)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

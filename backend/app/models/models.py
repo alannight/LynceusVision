@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -116,7 +118,7 @@ class Source(Base):
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    enabled: Mapped[bool] = mapped_column(default=True, server_default="1")
+    enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     status: Mapped[str] = mapped_column(String(32), default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
@@ -151,7 +153,7 @@ class Observation(Base):
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )
     duration_ms: Mapped[int | None] = mapped_column(nullable=True)
-    normalized_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    normalized_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     normalized_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -186,7 +188,7 @@ class SearchQuery(Base):
     category: Mapped[str] = mapped_column(
         String(64), nullable=False, default="general", server_default="general"
     )
-    structured_filters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    structured_filters: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

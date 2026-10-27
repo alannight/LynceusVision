@@ -121,11 +121,23 @@ class CollectRequest(BaseModel):
         ..., min_length=1, max_length=2048, description="Domain, IP, or URL to investigate"
     )
     connectors: list[str] | None = Field(
-        None, description="Omit or use null for all enabled connectors; an empty list is invalid."
+        None,
+        max_length=4,
+        description="Omit or use null for all enabled connectors; an empty list is invalid.",
     )
     save_to_investigation_id: str | None = Field(
         None, description="If provided, results are saved as entities and observations."
     )
+
+    @field_validator("connectors")
+    @classmethod
+    def validate_connectors(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None:
+            if len(value) != len(set(value)):
+                raise ValueError("connector IDs must not be repeated")
+            if any(len(connector_id) > 64 for connector_id in value):
+                raise ValueError("connector IDs must not exceed 64 characters")
+        return value
 
 
 class ConnectorResult(BaseModel):

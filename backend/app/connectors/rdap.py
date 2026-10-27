@@ -6,6 +6,7 @@ API documentation: https://www.rdap.org/
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -56,12 +57,12 @@ class RDAPConnector(BaseConnector):
                 query, "RESPONSE_TOO_LARGE", None, self._elapsed_ms(start), str(exc)
             )
         except (httpx.TimeoutException, TimeoutError):
-            logger.warning("RDAP timeout for %s", domain)
+            logger.warning("RDAP provider timed out")
             return self._result(
                 query, "TIMEOUT", None, self._elapsed_ms(start), "Request timed out"
             )
         except httpx.RequestError as exc:
-            logger.error("RDAP request error for %s: %s", domain, exc)
+            logger.error("RDAP request failed (%s)", type(exc).__name__)
             return self._result(query, "PROVIDER_ERROR", None, self._elapsed_ms(start), str(exc))
 
         elapsed = self._elapsed_ms(start)
@@ -91,7 +92,7 @@ class RDAPConnector(BaseConnector):
         return self._result(query, "OK", normalized, elapsed)
 
 
-def _normalize_rdap(raw: dict) -> dict:
+def _normalize_rdap(raw: dict[str, Any]) -> dict[str, Any]:
     """Extract the most useful RDAP fields into a flat normalized structure."""
     events: dict[str, str] = {}
     for ev in raw.get("events", []):

@@ -27,6 +27,40 @@ function build({ keywords = [], sites = [], files = [], exact = [], exclude = []
     .setDateFilters(dates);
 }
 
+test("acceptance A: exact phrase is emitted once with site and filetype", () => {
+  assert.equal(build({ sites: ["go.id"], exact: ["laporan tahunan"], files: ["pdf"] }).buildQuery(), 'site:go.id "laporan tahunan" filetype:pdf');
+});
+
+test("acceptance B: exact phrases can be explicitly connected with AND", () => {
+  const builder = build({ sites: ["ac.id"], exact: ["kecerdasan buatan", "pembelajaran mesin"] });
+  builder.setKeywordLogic({ operator: "AND", exactPhrases: ["kecerdasan buatan", "pembelajaran mesin"], exactPhraseOperator: "AND", excludeTerms: [], termGroups: [] });
+  assert.equal(builder.buildQuery(), 'site:ac.id "kecerdasan buatan" AND "pembelajaran mesin"');
+});
+
+test("acceptance C: site and extension alternatives do not absorb required phrases", () => {
+  const builder = build({ sites: ["edu", "ac.id"], exact: ["jurnal", "keamanan jaringan"] });
+  builder.setDocumentTypes([{ filetype: "docx", operator: "ext" }]);
+  assert.equal(builder.buildQuery(), '(site:edu OR site:ac.id) "jurnal" "keamanan jaringan" ext:docx');
+});
+
+test("acceptance D: excluded domain and exact phrase remain negative", () => {
+  const builder = build({ exact: ["panduan mitigasi bencana"], files: ["pdf"], exclude: ["berbayar"] });
+  builder.setSites([{ domain: "com", exclude: true }]);
+  assert.equal(builder.buildQuery(), '"panduan mitigasi bencana" filetype:pdf -site:com -"berbayar"');
+});
+
+test("acceptance E: title and URL attributes precede body phrase", () => {
+  const builder = build({ sites: ["org"], exact: ["kesehatan masyarakat"] });
+  builder.setPageAttributes({ intitle: ["data statistik"], inurl: ["2023"] });
+  assert.equal(builder.buildQuery(), 'site:org intitle:"data statistik" inurl:2023 "kesehatan masyarakat"');
+});
+
+test("acceptance F: multiple ext alternatives form one OR group", () => {
+  const builder = build({ sites: ["bps.go.id"], exact: ["sensus penduduk"] });
+  builder.setAdvancedOperators({ ext: ["xls", "xlsx", "csv"] });
+  assert.equal(builder.buildQuery(), 'site:bps.go.id "sensus penduduk" (ext:xls OR ext:xlsx OR ext:csv)');
+});
+
 test("keyword only omits all optional operators", () => {
   assert.equal(build({ keywords: ["keamanan siber Indonesia"] }).buildQuery(), "keamanan siber Indonesia");
 });
@@ -46,12 +80,16 @@ test("site alternatives scope one keyword without duplicating it", () => {
   assert.doesNotMatch(query, /KATA_KUNCI.*\bOR\b.*KATA_KUNCI/);
 });
 
+test("intentional repeated keyword entries remain repeated", () => {
+  assert.equal(build({ keywords: ["keyword", "keyword"] }).buildQuery(), "keyword keyword");
+});
+
 test("one file type and one site compose independently", () => {
-  assert.equal(build({ keywords: ["keamanan informasi"], sites: ["upnvj.ac.id"], files: ["pdf"] }).buildQuery(), "site:upnvj.ac.id filetype:pdf keamanan informasi");
+  assert.equal(build({ keywords: ["keamanan informasi"], sites: ["upnvj.ac.id"], files: ["pdf"] }).buildQuery(), "site:upnvj.ac.id keamanan informasi filetype:pdf");
 });
 
 test("multiple file types are grouped without swallowing keywords", () => {
-  assert.equal(build({ keywords: ["keamanan informasi"], files: ["pdf", "docx"] }).buildQuery(), "(filetype:pdf OR filetype:docx) keamanan informasi");
+  assert.equal(build({ keywords: ["keamanan informasi"], files: ["pdf", "docx"] }).buildQuery(), 'keamanan informasi (filetype:pdf OR filetype:docx)');
 });
 
 test("exact phrases remain quoted alongside ordinary keywords", () => {
@@ -84,7 +122,7 @@ test("explicit term groups retain their AND/OR nesting", () => {
 });
 
 test("exclusions are appended as negative terms", () => {
-  assert.equal(build({ keywords: ["phishing detection"], exclude: ["job", "vacancy"] }).buildQuery(), "phishing detection -job -vacancy");
+  assert.equal(build({ keywords: ["phishing detection"], exclude: ["job", "vacancy"] }).buildQuery(), 'phishing detection -"job" -"vacancy"');
 });
 
 test("after, before, and valid date ranges serialize consistently", () => {
@@ -94,7 +132,7 @@ test("after, before, and valid date ranges serialize consistently", () => {
 });
 
 test("combined site, file, phrase, and exclusion filters preserve each group", () => {
-  assert.equal(build({ sites: ["upnvj.ac.id", "komdigi.go.id"], files: ["pdf", "docx"], exact: ["keamanan informasi"], exclude: ["lowongan"] }).buildQuery(), '(site:upnvj.ac.id OR site:komdigi.go.id) (filetype:pdf OR filetype:docx) "keamanan informasi" -lowongan');
+  assert.equal(build({ sites: ["upnvj.ac.id", "komdigi.go.id"], files: ["pdf", "docx"], exact: ["keamanan informasi"], exclude: ["lowongan"] }).buildQuery(), '(site:upnvj.ac.id OR site:komdigi.go.id) "keamanan informasi" (filetype:pdf OR filetype:docx) -"lowongan"');
 });
 
 test("empty input is rejected with a clear message", () => {
@@ -157,6 +195,13 @@ test("invalid domains, file types, dates, ranges, and incomplete syntax are reje
   assert.throws(() => build({ keywords: ["x"], dates: { startDate: "2024-02-30" } }).buildQuery(), /valid calendar date/);
   assert.throws(() => build({ keywords: ["x"], dates: { startDate: "2025-01-01", endDate: "2024-01-01" } }).buildQuery(), /on or before/);
   assert.equal(build().validateRawQuery("site: example.com").valid, false);
+  assert.throws(() => build({ keywords: ["x"], files: ["bad/extension"] }).buildQuery(), /Invalid file type/);
+  const unmatched = build({ keywords: ["x"] });
+  unmatched.setKeywordLogic({ operator: "AND", exactPhrases: ['unclosed"'], excludeTerms: [], termGroups: [] });
+  assert.throws(() => unmatched.buildQuery(), /unbalanced quotation/);
+  const singleAlternative = build({ keywords: ["x"] });
+  singleAlternative.setKeywordLogic({ operator: "AND", exactPhrases: [], excludeTerms: [], termGroups: [{ operator: "OR", terms: ["one"] }] });
+  assert.throws(() => singleAlternative.buildQuery(), /at least two/);
 });
 
 test("URL builder rejects unknown or custom providers", () => {
@@ -180,7 +225,7 @@ test("query consistency between Preview, Copy, Open, and Save inputs", () => {
     exclude: ["lowongan"],
     provider: "google",
   });
-  const expectedQuery = 'site:upnvj.ac.id filetype:pdf "analisis risiko" keamanan siber -lowongan';
+  const expectedQuery = 'site:upnvj.ac.id "analisis risiko" keamanan siber filetype:pdf -"lowongan"';
 
   // 1. Preview query
   const previewQuery = builder.buildQuery();
@@ -205,14 +250,13 @@ test("retains structured filter input across provider changes without corruption
     provider: "google",
   });
   const googleQuery = builder.buildQuery();
-  assert.equal(googleQuery, "site:example.com filetype:json data breach");
+  assert.equal(googleQuery, "site:example.com data breach filetype:json");
 
   builder.setProvider("bing");
   const bingQuery = builder.buildQuery();
-  assert.equal(bingQuery, "site:example.com filetype:json data breach");
+  assert.equal(bingQuery, "site:example.com data breach filetype:json");
 
   builder.setProvider("duckduckgo");
   const ddgQuery = builder.buildQuery();
-  assert.equal(ddgQuery, "site:example.com filetype:json data breach");
+  assert.equal(ddgQuery, "site:example.com data breach filetype:json");
 });
-

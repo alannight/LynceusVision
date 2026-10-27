@@ -7,6 +7,7 @@ Terms: Public CT log data, free for research use.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -58,7 +59,7 @@ class CertSHConnector(BaseConnector):
                 query, "TIMEOUT", None, self._elapsed_ms(start), "Total request time exceeded"
             )
         except httpx.TimeoutException:
-            logger.warning("crt.sh timeout for %s", domain)
+            logger.warning("crt.sh provider timed out")
             return self._result(
                 query, "TIMEOUT", None, self._elapsed_ms(start), "Request timed out"
             )
@@ -96,7 +97,7 @@ class CertSHConnector(BaseConnector):
 
         # Deduplicate by common_name + name_value
         seen: set[str] = set()
-        certs: list[dict] = []
+        certs: list[dict[str, Any]] = []
         for cert in raw[:MAX_CERTS]:
             key = f"{cert.get('common_name', '')}|{cert.get('name_value', '')}"
             if key not in seen:

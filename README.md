@@ -15,7 +15,7 @@ Named after Lynceus, the Argonaut legendary for superhuman sight.
 | Project foundation | ✅ Complete |
 | Backend API (FastAPI) | ✅ Foundation MVP |
 | Database (PostgreSQL + Alembic) | ✅ Foundation MVP |
-| Frontend (Next.js 15 + Tailwind) | ✅ Foundation MVP |
+| Frontend (Next.js 16 + Tailwind) | ✅ Foundation MVP |
 | RDAP connector | ✅ Implemented |
 | DNS lookup connector | ✅ Implemented |
 | Certificate Transparency connector | ✅ Implemented |
@@ -56,8 +56,9 @@ Named after Lynceus, the Argonaut legendary for superhuman sight.
 git clone <repo>
 cd LynceusVision
 cp .env.example .env
-# Generate two unique values and put them in POSTGRES_PASSWORD and APP_SECRET_KEY in .env.
-# Hex values are URL-safe for the database connection string.
+# Generate three unique values and put them in POSTGRES_PASSWORD, REDIS_PASSWORD, and APP_SECRET_KEY in .env.
+# Assign the three generated hex values to POSTGRES_PASSWORD, REDIS_PASSWORD, and APP_SECRET_KEY.
+openssl rand -hex 32
 openssl rand -hex 32
 openssl rand -hex 32
 docker compose up --build
@@ -66,10 +67,12 @@ docker compose up --build
 - Frontend: http://localhost:3000 (loopback only)
 - Backend API: http://localhost:8000 (loopback only)
 - API docs: http://localhost:8000/docs
-- Create an account from the sign-in page. Passwords must be at least 12 characters.
+- Create an account from the sign-in page. Passwords must be at least 8 characters.
 - Compose applies Alembic migrations before starting the API. PostgreSQL is not published to the host.
 
-Compose requires `POSTGRES_PASSWORD` and `APP_SECRET_KEY`; production refuses to start without them. Set `CORS_ORIGINS` to the exact frontend origin when it differs from localhost. `NEXT_PUBLIC_API_URL` is a public browser URL compiled into the frontend. Never put server credentials there.
+Compose requires `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, and `APP_SECRET_KEY`; production refuses to start without them. Redis is private to the Compose network and backs shared rate limits across backend workers. Set `CORS_ORIGINS` to the exact frontend origin when it differs from localhost. `NEXT_PUBLIC_API_URL` is a public browser URL compiled into the frontend. Never put server credentials there.
+
+Deployments outside Compose must set `RATE_LIMIT_REDIS_URL` to a private Redis service. Production starts only when shared rate limiting is configured.
 
 For local development with a loopback PostgreSQL port:
 
@@ -83,7 +86,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 ### Prerequisites
 
-- Node.js ≥ 20, npm ≥ 10
+- Node.js ≥ 24, npm ≥ 10
 - Python ≥ 3.12
 - PostgreSQL ≥ 14 running locally (or use the SQLite fallback for development)
 

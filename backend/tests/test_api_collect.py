@@ -104,6 +104,24 @@ async def test_collect_rejects_empty_connector_list(client: httpx.AsyncClient) -
 
 
 @pytest.mark.asyncio
+async def test_collect_rejects_duplicate_connector_ids(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/collect",
+        json={"target": "example.com", "connectors": ["rdap", "rdap"]},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_collect_rejects_connector_fanout_over_limit(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/collect",
+        json={"target": "example.com", "connectors": ["a", "b", "c", "d", "e"]},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_collect_rejects_missing_investigation_before_network(
     client: httpx.AsyncClient,
 ) -> None:
